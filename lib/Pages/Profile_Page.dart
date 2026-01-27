@@ -2,6 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:waste_management/Pages/About_page.dart';
+import 'package:waste_management/Pages/Faq_Page.dart';
+import 'package:waste_management/Pages/PrivacyPolicy.dart';
+import 'package:waste_management/Pages/TermsOfUse_Page.dart';
 
 import 'Welcome_Page.dart';
 
@@ -29,6 +33,39 @@ class ProfilePage extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Logout failed: $e')),
       );
+    }
+  }
+
+  Future<void> _showLogoutConfirmation(BuildContext context) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Log out'),
+          content: const Text('Are you sure you want to log out?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(false);
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(true);
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm == true) {
+      await _logout(context);
     }
   }
 
@@ -89,29 +126,19 @@ class ProfilePage extends StatelessWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Row(
-                              children: [
-                                ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    maxWidth: MediaQuery.of(context).size.width * 0.50,
-                                  ),
-                                  child: Text(
-                                    displayName,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w800,
-                                    ),
-                                  ),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                  maxWidth: MediaQuery.of(context).size.width * 0.50,
                                 ),
-                                const SizedBox(width: 6),
-                                const Icon(
-                                  Icons.edit,
-                                  size: 18,
-                                  color: Colors.grey,
+                              child: Text(
+                                displayName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
                                 ),
-                              ],
+                              ),
                             ),
                             Text(
                               email,
@@ -145,34 +172,49 @@ class ProfilePage extends StatelessWidget {
                 child: Column(
                   children: [
                     _ProfileItem(
-                      icon: Icons.notifications_none,
-                      title: 'Notification',
-                      onTap: () {},
-                    ),
-                    _ProfileItem(
-                      icon: Icons.help_outline,
-                      title: 'Faq',
-                      onTap: () {},
-                    ),
-                    _ProfileItem(
                       icon: Icons.description_outlined,
                       title: 'Terms Of Use',
-                      onTap: () {},
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const TermsOfUsePage()),
+                        );
+                      },
                     ),
                     _ProfileItem(
                       icon: Icons.lock_outline,
                       title: 'Privacy Policy',
-                      onTap: () {},
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()),
+                        );
+                      },
                     ),
                     _ProfileItem(
                       icon: Icons.info_outline,
                       title: 'About',
-                      onTap: () {},
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const AboutPage()),
+                        );
+                      },
+                    ),
+                    _ProfileItem(
+                      icon: Icons.help_outline,
+                      title: 'Faq',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const FaqPage()),
+                        );
+                      },
                     ),
                     _ProfileItem(
                       icon: Icons.logout,
                       title: 'Log Out',
-                      onTap: () => _logout(context),
+                      onTap: () => _showLogoutConfirmation(context),
                       isLogout: true,
                       showDivider: false,
                     ),

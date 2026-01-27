@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/svg.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:stylish_bottom_bar/stylish_bottom_bar.dart';
 
+import 'Camera_Page.dart';
 import 'Profile_Page.dart';
 
 class NavigationBarPage extends StatefulWidget {
@@ -12,107 +13,107 @@ class NavigationBarPage extends StatefulWidget {
 }
 
 class _NavigationBarPageState extends State<NavigationBarPage> {
-  int _selectedIndex = 0;
+  int selectedIndex = 0;
 
-  final List<Widget> _pages = const [
+  final List<Widget> pages = const [
     Center(child: Text('Home')),
-    Center(child: Text('Camera')),
     ProfilePage(),
   ];
+
+  void onTabSelected(int index) {
+    setState(() {
+      selectedIndex = index;
+    });
+  }
+
+  void onCameraPressed() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const CameraPage()),
+    );
+  }
+
+  Widget _svgIcon(String asset, Color color) {
+    return SvgPicture.asset(
+      asset,
+      width: 22,
+      height: 22,
+      colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _pages[_selectedIndex],
-      bottomNavigationBar: SizedBox(height: 62,
+      extendBody: true,
+      resizeToAvoidBottomInset: false,
+      body: pages[selectedIndex],
+      bottomNavigationBar: SizedBox(
+        height: 60,
         child: StylishBottomBar(
-          option: BubbleBarOptions(
-            barStyle: BubbleBarStyle.horizontal, // keeps width stable
-            bubbleFillStyle: BubbleFillStyle.fill,
-            opacity: 0.15, // controls background intensity
+          option: AnimatedBarOptions(
+            iconStyle: IconStyle.Default, // ✅ correct usage
+            barAnimation: BarAnimation.fade,
           ),
-          currentIndex: _selectedIndex,
-          onTap: (index) {
-            setState(() {
-              _selectedIndex = index;
-            });
-          },
           items: [
             BottomBarItem(
-              icon: SvgPicture.asset(
+              icon: _svgIcon(
                 'lib/assets/images/home.svg',
-                width: 24,
-                height: 24,
-                colorFilter: const ColorFilter.mode(
-                  Colors.grey,
-                  BlendMode.srcIn,
-                ),
+                Colors.grey,
               ),
-              selectedIcon: SvgPicture.asset(
+              selectedIcon: _svgIcon(
                 'lib/assets/images/home.svg',
-                width: 24,
-                height: 24,
-                colorFilter: const ColorFilter.mode(
-                  Colors.blue,
-                  BlendMode.srcIn,
-                ),
+                Colors.blue,
               ),
-              title: const Text('Home'),
+              title: const Text(
+                'Home',
+                style: TextStyle(fontSize: 14),
+              ),
               selectedColor: Colors.blue,
               unSelectedColor: Colors.grey,
-              backgroundColor: Colors.blue,
             ),
-
             BottomBarItem(
-              icon: SvgPicture.asset(
-                'lib/assets/images/camera.svg',
-                width: 24,
-                height: 24,
-                colorFilter: const ColorFilter.mode(
-                  Colors.grey,
-                  BlendMode.srcIn,
-                ),
+              icon: _svgIcon(
+                'lib/assets/images/profile.svg',
+                Colors.grey,
               ),
-              selectedIcon: SvgPicture.asset(
-                'lib/assets/images/camera.svg',
-                width: 24,
-                height: 24,
-                colorFilter: const ColorFilter.mode(
-                  Colors.blue,
-                  BlendMode.srcIn,
-                ),
+              selectedIcon: _svgIcon(
+                'lib/assets/images/profile.svg',
+                Colors.blue,
               ),
-              title: const Text('Camera'),
+              title: const Text(
+                'Profile',
+                style: TextStyle(fontSize: 14),
+              ),
               selectedColor: Colors.blue,
               unSelectedColor: Colors.grey,
-              backgroundColor: Colors.blue,
-            ),
-
-            BottomBarItem(
-              icon: SvgPicture.asset(
-                'lib/assets/images/profile.svg',
-                width: 24,
-                height: 24,
-                colorFilter: const ColorFilter.mode(
-                  Colors.grey,
-                  BlendMode.srcIn,
-                ),
-              ),
-              selectedIcon: SvgPicture.asset(
-                'lib/assets/images/profile.svg',
-                width: 24,
-                height: 24,
-                colorFilter: const ColorFilter.mode(
-                  Colors.blue,
-                  BlendMode.srcIn,
-                ),
-              ),
-              title: const Text('Profile'),
-              selectedColor: Colors.blue,
-              unSelectedColor: Colors.grey,
-              backgroundColor: Colors.blue,
             ),
           ],
+          fabLocation: StylishBarFabLocation.center,
+          notchStyle: NotchStyle.circle,
+          hasNotch: true,
+          backgroundColor: Colors.white.withAlpha(180),
+          currentIndex: selectedIndex,
+          onTap: onTabSelected,
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      floatingActionButton: SizedBox(
+        width: 56,
+        height: 56,
+        child: FloatingActionButton(
+          elevation: 6,
+          shape: const CircleBorder(),
+          backgroundColor: Colors.blue,
+          onPressed: onCameraPressed,
+          child: SvgPicture.asset(
+            'lib/assets/images/camera.svg',
+            width: 26,
+            height: 26,
+            colorFilter: const ColorFilter.mode(
+              Colors.white,
+              BlendMode.srcIn,
+            ),
+          ),
         ),
       ),
     );
