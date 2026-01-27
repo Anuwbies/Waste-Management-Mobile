@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:stylish_bottom_bar/stylish_bottom_bar.dart';
+import 'package:waste_management/Pages/Home_Page.dart';
 
-import 'Camera_Page.dart';
+import 'Camera/Camera_Page.dart';
 import 'Profile_Page.dart';
 
 class NavigationBarPage extends StatefulWidget {
@@ -15,9 +16,9 @@ class NavigationBarPage extends StatefulWidget {
 class _NavigationBarPageState extends State<NavigationBarPage> {
   int selectedIndex = 0;
 
-  final List<Widget> pages = const [
-    Center(child: Text('Home')),
-    ProfilePage(),
+  final List<Widget> pages = [
+    const HomePage(),
+    const ProfilePage(),
   ];
 
   void onTabSelected(int index) {
@@ -51,7 +52,7 @@ class _NavigationBarPageState extends State<NavigationBarPage> {
         height: 60,
         child: StylishBottomBar(
           option: AnimatedBarOptions(
-            iconStyle: IconStyle.Default, // ✅ correct usage
+            iconStyle: IconStyle.Default,
             barAnimation: BarAnimation.fade,
           ),
           items: [
@@ -66,7 +67,7 @@ class _NavigationBarPageState extends State<NavigationBarPage> {
               ),
               title: const Text(
                 'Home',
-                style: TextStyle(fontSize: 14),
+                style: TextStyle(fontSize: 12),
               ),
               selectedColor: Colors.blue,
               unSelectedColor: Colors.grey,
@@ -82,7 +83,7 @@ class _NavigationBarPageState extends State<NavigationBarPage> {
               ),
               title: const Text(
                 'Profile',
-                style: TextStyle(fontSize: 14),
+                style: TextStyle(fontSize: 12),
               ),
               selectedColor: Colors.blue,
               unSelectedColor: Colors.grey,
