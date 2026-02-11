@@ -60,7 +60,7 @@ export interface GlobalChainStats {
 // =============================================================================
 
 const getRpcUrl = (): string => {
-  return process.env.RPC_URL || process.env.GANACHE_RPC_URL || "http://127.0.0.1:8545";
+  return process.env.RPC_URL || process.env.RPC_URL || "http://127.0.0.1:8545";
 };
 
 const getContractAddress = (): string => {
@@ -133,9 +133,9 @@ const getContract = (runner: JsonRpcProvider | Wallet): Contract => {
 // =============================================================================
 
 const getServiceSigner = (): Wallet => {
-  const privateKey = process.env.PRIVATE_KEY || process.env.GANACHE_PRIVATE_KEY;
+  const privateKey = process.env.PRIVATE_KEY || process.env.PRIVATE_KEY;
   if (!privateKey) {
-    throw new Error("PRIVATE_KEY or GANACHE_PRIVATE_KEY is not configured");
+    throw new Error("PRIVATE_KEY is not configured");
   }
 
   const provider = getProvider();
@@ -518,7 +518,7 @@ export const isBlockchainConfigured = async (): Promise<boolean> => {
       return false;
     }
 
-    if (!process.env.PRIVATE_KEY && !process.env.GANACHE_PRIVATE_KEY) {
+    if (!process.env.PRIVATE_KEY && !process.env.PRIVATE_KEY) {
       return false;
     }
 
@@ -586,8 +586,8 @@ export const getBlockchainHealth = async (): Promise<BlockchainHealthStatus> => 
     result.contractAddress = process.env.CONTRACT_ADDRESS;
 
     // Check private key is configured
-    if (!process.env.PRIVATE_KEY && !process.env.GANACHE_PRIVATE_KEY) {
-      result.error = "PRIVATE_KEY or GANACHE_PRIVATE_KEY not configured";
+    if (!process.env.PRIVATE_KEY && !process.env.PRIVATE_KEY) {
+      result.error = "PRIVATE_KEY not configured";
       return result;
     }
 

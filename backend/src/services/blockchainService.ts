@@ -6,7 +6,7 @@ type ContractArtifact = {
   abi: InterfaceAbi;
 };
 
-const ganacheUrl = process.env.GANACHE_RPC_URL || "http://127.0.0.1:8545";
+const ganacheUrl = process.env.RPC_URL || "http://127.0.0.1:8545";
 const contractAddress = process.env.CONTRACT_ADDRESS;
 const abiPath =
   process.env.CONTRACT_ABI_PATH ||
@@ -40,9 +40,9 @@ const getContract = (runner: JsonRpcProvider | Wallet): Contract => {
 };
 
 const getSigner = (): Wallet => {
-  const privateKey = process.env.GANACHE_PRIVATE_KEY;
+  const privateKey = process.env.PRIVATE_KEY;
   if (!privateKey) {
-    throw new Error("GANACHE_PRIVATE_KEY is not set");
+    throw new Error("PRIVATE_KEY is not set");
   }
 
   return new Wallet(privateKey, provider);

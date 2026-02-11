@@ -9,6 +9,7 @@ import authRoutes from "./routes/authRoutes";
 import wasteRoutes from "./routes/wasteRoutes";
 import rewardsRoutes from "./routes/rewardsRoutes";
 import { getBlockchainHealth } from "./services/blockchainServiceV2";
+import { getAiHealth } from "./services/aiService";
 import { loggerMiddleware, logStartup } from "./middleware/logger";
 
 const app = express();
@@ -40,6 +41,29 @@ app.get("/health/blockchain", async (_req: Request, res: Response) => {
   }
 });
 
+// GET /health/ai - AI inference service health check
+app.get("/health/ai", async (_req: Request, res: Response) => {
+  const start = Date.now();
+  try {
+    const health = await getAiHealth();
+    const latencyMs = Date.now() - start;
+    const ok = health.modelLoaded === true;
+    res.status(ok ? 200 : 503).json({
+      ok,
+      latencyMs,
+      ...health,
+    });
+  } catch (error) {
+    const latencyMs = Date.now() - start;
+    res.status(503).json({
+      ok: false,
+      latencyMs,
+      status: "unreachable",
+      error: (error as Error).message,
+    });
+  }
+});
+
 // API Routes
 app.use("/auth", authRoutes);
 app.use("/waste", wasteRoutes);
@@ -47,7 +71,20 @@ app.use("/rewards", rewardsRoutes);
 app.use("/recycle", recycleRoutes);
 app.use("/user", userRoutes);
 
+// Multer file-filter errors → 415; multer limit errors → 400; others → 500
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  // Multer error: invalid file type from fileFilter
+  if (
+    err.message &&
+    err.message.toLowerCase().includes("invalid file type")
+  ) {
+    return res.status(415).json({ message: err.message });
+  }
+  // Multer error: file too large or other multer limits
+  if ((err as { code?: string }).code === "LIMIT_FILE_SIZE") {
+    return res.status(400).json({ message: "File too large. Maximum size is 10 MB." });
+  }
+
   const status = (err as { status?: number }).status ?? 500;
   res.status(status).json({
     message: err.message || "Internal server error",

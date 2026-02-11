@@ -6,6 +6,9 @@ export interface IWasteClassification extends Document {
   wasteType: string;
   confidence: number;
   rewardPoints: number;
+  rawLabel?: string;
+  modelVersion?: string;
+  status?: string; // "approved" | "denied"
   createdAt: Date;
   updatedAt: Date;
 }
@@ -17,6 +20,9 @@ const wasteClassificationSchema = new Schema<IWasteClassification>(
     wasteType: { type: String, required: true },
     confidence: { type: Number, default: 0 },
     rewardPoints: { type: Number, default: 0 },
+    rawLabel: { type: String },
+    modelVersion: { type: String },
+    status: { type: String, enum: ["approved", "denied"], default: "approved" },
   },
   { timestamps: true }
 );

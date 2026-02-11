@@ -6,6 +6,7 @@ import WasteClassification from "../models/WasteClassification";
 import User from "../models/User";
 import RewardHistory from "../models/RewardHistory";
 import { calculateRewardPoints } from "../services/rewardService";
+import { classifyImage, AiClassificationResult } from "../services/aiService";
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, "..", "..", "uploads");
@@ -13,17 +14,27 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Simulated classification service (replace with actual ML model)
+// Confidence threshold below which rewards are denied
+const REWARD_CONFIDENCE_THRESHOLD = 0.40;
+
+// Canonical waste types that qualify for rewards
+const REWARDABLE_TYPES = new Set([
+  "plastic",
+  "paper",
+  "metal",
+  "glass",
+  "organic",
+  "e-waste",
+]);
+
+/**
+ * Classify an image using the AI inference service.
+ * Falls back to an error if the service is unreachable.
+ */
 const classifyWasteImage = async (
-  _imagePath: string
-): Promise<{ wasteType: string; confidence: number }> => {
-  // Simulated classification - replace with actual TensorFlow/ML service
-  const wasteTypes = ["plastic", "metal", "glass", "paper", "organic"];
-  const randomIndex = Math.floor(Math.random() * wasteTypes.length);
-  return {
-    wasteType: wasteTypes[randomIndex],
-    confidence: 0.75 + Math.random() * 0.2,
-  };
+  imagePath: string
+): Promise<AiClassificationResult> => {
+  return classifyImage(imagePath);
 };
 
 // POST /waste/upload - Upload and classify waste image
@@ -47,42 +58,76 @@ export const uploadWasteImage = async (
     // Get file path
     const imageUrl = `/uploads/${req.file.filename}`;
 
-    // Classify the waste
-    const classification = await classifyWasteImage(req.file.path);
+    // Classify the waste via AI inference service
+    let classification: AiClassificationResult;
+    try {
+      classification = await classifyWasteImage(req.file.path);
+    } catch (aiError) {
+      console.error("[wasteController] AI service error:", aiError);
+      return res.status(503).json({
+        message: "AI classification service is unavailable. Please try again later.",
+        error: (aiError as Error).message,
+      });
+    }
 
-    // Calculate reward points
-    const rewardPoints = calculateRewardPoints(classification.wasteType);
+    const { wasteType, confidence, topK, rawLabel, modelVersion } = classification;
+
+    // Determine if reward qualifies
+    const isDenied =
+      !REWARDABLE_TYPES.has(wasteType) ||
+      wasteType === "unknown" ||
+      confidence < REWARD_CONFIDENCE_THRESHOLD;
+
+    const rewardPoints = isDenied ? 0 : calculateRewardPoints(wasteType);
+    const status = isDenied ? "denied" : "approved";
 
     // Save classification record
     const wasteRecord = await WasteClassification.create({
       userId,
       imageUrl,
-      wasteType: classification.wasteType,
-      confidence: classification.confidence,
+      wasteType,
+      confidence,
       rewardPoints,
+      rawLabel,
+      modelVersion,
+      status,
     });
 
-    // Update user rewards
-    user.totalRewards += rewardPoints;
-    await user.save();
+    // Only update user rewards if approved
+    if (!isDenied) {
+      user.totalRewards += rewardPoints;
+      await user.save();
 
-    // Record in reward history
-    await RewardHistory.create({
-      userId,
-      type: "classification",
-      points: rewardPoints,
-      description: `Classified ${classification.wasteType} waste`,
-      referenceId: wasteRecord._id,
-    });
+      // Record in reward history
+      await RewardHistory.create({
+        userId,
+        type: "classification",
+        points: rewardPoints,
+        description: `Classified ${wasteType} waste (${(confidence * 100).toFixed(0)}% confidence)`,
+        referenceId: wasteRecord._id,
+      });
+    }
+
+    console.log(
+      `[wasteController] Classification: ${wasteType} (${(confidence * 100).toFixed(1)}%) ` +
+        `raw="${rawLabel}" status=${status} points=${rewardPoints}`
+    );
 
     return res.status(201).json({
-      message: "Image uploaded and classified successfully",
+      message:
+        isDenied
+          ? "Image classified but reward denied (low confidence or unsupported type)"
+          : "Image uploaded and classified successfully",
       classification: {
         id: wasteRecord._id,
         imageUrl,
-        wasteType: classification.wasteType,
-        confidence: classification.confidence,
+        wasteType,
+        confidence,
+        rawLabel,
+        modelVersion,
+        topK,
         rewardPoints,
+        status,
       },
       totalRewards: user.totalRewards,
     });
@@ -102,19 +147,41 @@ export const classifyWaste = async (
       return res.status(400).json({ message: "No image file uploaded" });
     }
 
-    // Classify the waste
-    const classification = await classifyWasteImage(req.file.path);
+    // Classify the waste via AI inference service
+    let classification: AiClassificationResult;
+    try {
+      classification = await classifyImage(req.file.path);
+    } catch (aiError) {
+      // Clean up temp file before returning error
+      try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
+      console.error("[wasteController] AI service error:", aiError);
+      return res.status(503).json({
+        message: "AI classification service is unavailable. Please try again later.",
+        error: (aiError as Error).message,
+      });
+    }
 
-    // Calculate potential reward points
-    const rewardPoints = calculateRewardPoints(classification.wasteType);
+    const { wasteType, confidence, topK, rawLabel, modelVersion } = classification;
+
+    // Calculate potential reward points (0 if denied)
+    const isDenied =
+      !REWARDABLE_TYPES.has(wasteType) ||
+      wasteType === "unknown" ||
+      confidence < REWARD_CONFIDENCE_THRESHOLD;
+
+    const rewardPoints = isDenied ? 0 : calculateRewardPoints(wasteType);
 
     // Delete temporary file
-    fs.unlinkSync(req.file.path);
+    try { fs.unlinkSync(req.file.path); } catch { /* ignore */ }
 
     return res.status(200).json({
-      wasteType: classification.wasteType,
-      confidence: classification.confidence,
+      wasteType,
+      confidence,
+      rawLabel,
+      modelVersion,
+      topK,
       potentialRewardPoints: rewardPoints,
+      status: isDenied ? "denied" : "approved",
     });
   } catch (error) {
     return next(error);

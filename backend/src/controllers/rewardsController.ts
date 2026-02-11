@@ -149,27 +149,27 @@ const REDEMPTION_OPTIONS: Record<
 > = {
   coffee_voucher: {
     name: "Coffee Voucher",
-    pointsCost: 100,
+    pointsCost: 1,
     description: "Free coffee at partner cafes",
   },
   discount_10: {
     name: "10% Discount",
-    pointsCost: 200,
+    pointsCost: 20,
     description: "10% off at partner stores",
   },
   discount_20: {
     name: "20% Discount",
-    pointsCost: 350,
+    pointsCost: 35,
     description: "20% off at partner stores",
   },
   tree_planting: {
     name: "Plant a Tree",
-    pointsCost: 500,
+    pointsCost: 50,
     description: "Donate to plant a tree in your name",
   },
   eco_kit: {
     name: "Eco Starter Kit",
-    pointsCost: 1000,
+    pointsCost: 100,
     description: "Reusable bags, bottles, and utensils",
   },
 };
