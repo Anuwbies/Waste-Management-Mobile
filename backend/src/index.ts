@@ -2,6 +2,7 @@ import "./config/env";
 import cors from "cors";
 import express, { NextFunction, Request, Response } from "express";
 import mongoose from "mongoose";
+import cookieParser from "cookie-parser";
 import path from "path";
 import recycleRoutes from "./routes/recycleRoutes";
 import userRoutes from "./routes/userRoutes";
@@ -16,6 +17,7 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+// app.use(cookieParser());
 
 // Request/Response logging middleware (must be before routes)
 app.use(loggerMiddleware);

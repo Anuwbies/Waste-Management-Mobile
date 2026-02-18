@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "hardhat/console.sol";
 
 /// @title RecyclingRewardsV2
 /// @notice On-chain rewards ledger with deduplication, role-based minting, and redemption

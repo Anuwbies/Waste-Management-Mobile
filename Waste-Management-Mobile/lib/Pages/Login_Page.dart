@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/auth_service.dart';
+import 'ForgotPassword_Page.dart';
 import 'NavigationBar_Page.dart';
 import 'Register_Page.dart';
 
@@ -209,6 +210,32 @@ class _LoginPageState extends State<LoginPage> {
                                     : 'lib/assets/images/eye open.png',
                                 width: 20,
                                 height: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Forgot password link
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ForgotPasswordPage(),
+                              ),
+                            );
+                          },
+                          child: const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text(
+                              'Forgot Password?',
+                              style: TextStyle(
+                                color: Colors.blue,
+                                fontWeight: FontWeight.w500,
+                                fontSize: 13,
                               ),
                             ),
                           ),

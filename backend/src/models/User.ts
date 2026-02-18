@@ -6,8 +6,20 @@ export interface IUser extends Document {
   passwordHash: string;
   googleId?: string;
   photoUrl?: string;
+  emailVerified: boolean;
   walletAddress: string;
   totalRewards: number;
+
+  // Password-reset OTP fields
+  passwordResetOtpHash?: string;
+  passwordResetOtpExpiresAt?: Date;
+  passwordResetAttempts: number;
+  passwordResetTokenHash?: string;
+
+  // Login-attempt tracking
+  loginAttempts: number;
+  loginLockUntil?: Date;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,8 +31,19 @@ const userSchema = new Schema<IUser>(
     passwordHash: { type: String, default: "" },
     googleId: { type: String },
     photoUrl: { type: String },
+    emailVerified: { type: Boolean, default: false },
     walletAddress: { type: String, default: "" },
     totalRewards: { type: Number, default: 0 },
+
+    // Password-reset OTP
+    passwordResetOtpHash: { type: String },
+    passwordResetOtpExpiresAt: { type: Date },
+    passwordResetAttempts: { type: Number, default: 0 },
+    passwordResetTokenHash: { type: String },
+
+    // Login-attempt tracking
+    loginAttempts: { type: Number, default: 0 },
+    loginLockUntil: { type: Date },
   },
   { timestamps: true }
 );

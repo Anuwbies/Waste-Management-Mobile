@@ -11,7 +11,7 @@ class AuthService extends ChangeNotifier {
   AuthService._internal();
 
   final ApiClient _api = ApiClient();
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final GoogleSignIn _googleSignIn = GoogleSignIn(serverClientId: "127507564653-ev16rej74t096hhhlhpb240a0k1f90j7.apps.googleusercontent.com");
 
   // Current user state
   UserData? _currentUser;
@@ -81,20 +81,14 @@ class AuthService extends ChangeNotifier {
   }
 
   /// Login with email and password
-  Future<bool> login({
-    required String email,
-    required String password,
-  }) async {
+  Future<bool> login({required String email, required String password}) async {
     _setLoading(true);
     _clearError();
 
     try {
       final response = await _api.post(
         '/auth/login',
-        body: {
-          'email': email,
-          'password': password,
-        },
+        body: {'email': email, 'password': password},
         requireAuth: false,
       );
 
@@ -113,7 +107,21 @@ class AuthService extends ChangeNotifier {
       _setLoading(false);
       return false;
     } on ApiException catch (e) {
-      _setError(e.message);
+      // Map backend error codes to user-friendly messages
+      final code = e.data?['code'] as String?;
+      switch (code) {
+        case 'INVALID_CREDENTIALS':
+          _setError('Invalid email or password');
+          break;
+        case 'TOO_MANY_ATTEMPTS':
+          _setError('Too many attempts. Please try again later.');
+          break;
+        case 'VALIDATION_ERROR':
+          _setError(e.message);
+          break;
+        default:
+          _setError(e.message);
+      }
       _setLoading(false);
       return false;
     } catch (e) {
@@ -134,16 +142,15 @@ class AuthService extends ChangeNotifier {
 
       // Start Google Sign-In flow
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
+      debugPrint("$googleUser");
       if (googleUser == null) {
         _setLoading(false);
         return false; // User cancelled
       }
 
       // Get auth details
-      final GoogleSignInAuthentication googleAuth = 
+      final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
-
       if (googleAuth.idToken == null) {
         _setError('Failed to get Google authentication token');
         _setLoading(false);
@@ -153,9 +160,7 @@ class AuthService extends ChangeNotifier {
       // Send token to backend
       final response = await _api.post(
         '/auth/google',
-        body: {
-          'idToken': googleAuth.idToken,
-        },
+        body: {'idToken': googleAuth.idToken},
         requireAuth: false,
       );
 
@@ -188,7 +193,7 @@ class AuthService extends ChangeNotifier {
   Future<UserData?> refreshUser() async {
     try {
       final response = await _api.get('/auth/me');
-      
+
       if (response['user'] != null) {
         _currentUser = UserData.fromJson(
           response['user'] as Map<String, dynamic>,
@@ -250,8 +255,63 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  /// Logout
+  // ----------------------------------------------------------------
+  // Forgot-password / OTP flow
+  // ----------------------------------------------------------------
+
+  /// Request a password-reset OTP for [email].
+  /// The backend always returns 200 to prevent email enumeration.
+  Future<void> forgotPassword(String email) async {
+    await _api.post(
+      '/auth/forgot-password',
+      body: {'email': email},
+      requireAuth: false,
+    );
+  }
+
+  /// Verify the 6-digit [otp] for [email].
+  /// Returns the one-time `resetToken` on success.
+  Future<String> verifyOtp(String email, String otp) async {
+    final response = await _api.post(
+      '/auth/verify-otp',
+      body: {'email': email, 'otp': otp},
+      requireAuth: false,
+    );
+    final resetToken = response['resetToken'] as String?;
+    if (resetToken == null || resetToken.isEmpty) {
+      throw ApiException('Invalid server response');
+    }
+    return resetToken;
+  }
+
+  /// Reset password using the [resetToken] obtained from [verifyOtp].
+  Future<void> resetPassword({
+    required String email,
+    required String resetToken,
+    required String newPassword,
+  }) async {
+    await _api.post(
+      '/auth/reset-password',
+      body: {
+        'email': email,
+        'resetToken': resetToken,
+        'newPassword': newPassword,
+      },
+      requireAuth: false,
+    );
+  }
+
+  // ----------------------------------------------------------------
+  // Logout
+  // ----------------------------------------------------------------
+
+  /// Logout — clear local token and notify listeners.
   Future<void> logout() async {
+    try {
+      // Best-effort server-side logout
+      await _api.post('/auth/logout');
+    } catch (_) {}
+
     try {
       await _googleSignIn.signOut();
     } catch (_) {}

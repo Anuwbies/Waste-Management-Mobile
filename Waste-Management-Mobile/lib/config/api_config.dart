@@ -17,7 +17,7 @@ class ApiConfig {
   /// Physical device: use your computer's local IP address
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.1.5:5000',
+    defaultValue: 'http://10.0.2.2:5000',
   );
 
   /// API timeout duration
@@ -47,6 +47,10 @@ class ApiConfig {
   static const String authRegister = '/auth/register';
   static const String authLogin = '/auth/login';
   static const String authGoogle = '/auth/google';
+  static const String authLogout = '/auth/logout';
+  static const String authForgotPassword = '/auth/forgot-password';
+  static const String authVerifyOtp = '/auth/verify-otp';
+  static const String authResetPassword = '/auth/reset-password';
   static const String authMe = '/auth/me';
 
   // ============================================================

@@ -13,13 +13,16 @@ class AuthResponse {
   });
 
   factory AuthResponse.fromJson(Map<String, dynamic> json) {
+    // The backend uses structured error codes; derive success from presence
+    // of a token rather than comparing a specific string.
+    final code = json['code'] as String?;
     return AuthResponse(
       token: json['token'] as String?,
-      user: json['user'] != null 
-          ? UserData.fromJson(json['user'] as Map<String, dynamic>) 
+      user: json['user'] != null
+          ? UserData.fromJson(json['user'] as Map<String, dynamic>)
           : null,
       message: json['message'] as String?,
-      success: json['message'] != 'Invalid email or password',
+      success: code == null, // no error code → success
     );
   }
 }

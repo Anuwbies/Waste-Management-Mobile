@@ -1,6 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-
+import 'dart:developer';
 import '../services/auth_service.dart';
 import 'Login_Page.dart';
 import 'NavigationBar_Page.dart';
@@ -20,7 +20,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmPasswordController =
-  TextEditingController();
+      TextEditingController();
 
   // Auth service
   final AuthService _authService = AuthService();
@@ -34,8 +34,7 @@ class _RegisterPageState extends State<RegisterPage> {
       hintStyle: const TextStyle(color: Colors.grey),
       filled: true,
       fillColor: const Color(0xFFF9FAFB),
-      contentPadding:
-      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
@@ -59,8 +58,7 @@ class _RegisterPageState extends State<RegisterPage> {
     final password = _passwordController.text;
     final confirmPassword = _confirmPasswordController.text;
 
-    if ([firstName, lastName, email, password]
-        .any((value) => value.isEmpty)) {
+    if ([firstName, lastName, email, password].any((value) => value.isEmpty)) {
       _showError('All fields are required');
       return;
     }
@@ -100,22 +98,20 @@ class _RegisterPageState extends State<RegisterPage> {
   // ---------------- GOOGLE REGISTER ----------------
   Future<void> _signUpWithGoogle() async {
     setState(() => _loadingMethod = RegisterMethod.google);
-
     try {
       final success = await _authService.signInWithGoogle();
-
       if (!mounted) return;
 
       if (success) {
         Navigator.pushAndRemoveUntil(
           context,
-          MaterialPageRoute(
-            builder: (_) => const NavigationBarPage(),
-          ),
-              (route) => false,
+          MaterialPageRoute(builder: (_) => const NavigationBarPage()),
+          (route) => false,
         );
       } else {
         if (_authService.error != null) {
+          debugPrint("FAILED: ${_authService.error}");
+
           _showError(_authService.error!);
         }
         setState(() => _loadingMethod = RegisterMethod.none);
@@ -131,12 +127,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
     messenger.clearSnackBars();
     messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          textAlign: TextAlign.center,
-        ),
-      ),
+      SnackBar(content: Text(message, textAlign: TextAlign.center)),
     );
   }
 
@@ -239,20 +230,20 @@ class _RegisterPageState extends State<RegisterPage> {
                           ),
                           child: _loadingMethod == RegisterMethod.email
                               ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Colors.white,
-                            ),
-                          )
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.white,
+                                  ),
+                                )
                               : const Text(
-                            'Register',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                            ),
-                          ),
+                                  'Register',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                  ),
+                                ),
                         ),
                       ),
 
@@ -280,43 +271,39 @@ class _RegisterPageState extends State<RegisterPage> {
                         child: OutlinedButton(
                           onPressed: _signUpWithGoogle,
                           style: OutlinedButton.styleFrom(
-                            side: const BorderSide(
-                              color: Color(0xFFE5E7EB),
-                            ),
+                            side: const BorderSide(color: Color(0xFFE5E7EB)),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          child: _loadingMethod ==
-                              RegisterMethod.google
+                          child: _loadingMethod == RegisterMethod.google
                               ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Colors.black,
-                            ),
-                          )
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: Colors.black,
+                                  ),
+                                )
                               : Row(
-                            mainAxisAlignment:
-                            MainAxisAlignment.center,
-                            children: [
-                              Image.asset(
-                                'lib/assets/images/google icon.png',
-                                height: 22,
-                                width: 22,
-                              ),
-                              const SizedBox(width: 10),
-                              const Text(
-                                'Google',
-                                style: TextStyle(
-                                  color: Colors.black,
-                                  fontSize: 16,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Image.asset(
+                                      'lib/assets/images/google icon.png',
+                                      height: 22,
+                                      width: 22,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    const Text(
+                                      'Google',
+                                      style: TextStyle(
+                                        color: Colors.black,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                  ],
                                 ),
-                              ),
-                              const SizedBox(width: 4)
-                            ],
-                          ),
                         ),
                       ),
                     ],
@@ -330,8 +317,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   child: RichText(
                     text: TextSpan(
                       text: 'Already have an account? ',
-                      style:
-                      const TextStyle(color: Colors.black),
+                      style: const TextStyle(color: Colors.black),
                       children: [
                         TextSpan(
                           text: 'Login Now',
