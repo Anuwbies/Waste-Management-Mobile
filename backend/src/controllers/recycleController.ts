@@ -253,6 +253,7 @@ export const recycleWaste = async (
 };
 
 // GET /recycle/logs - Get user's recycling logs
+// Supports optional ?wasteType=plastic query param for server-side filtering
 export const getRecyclingLogs = async (
   req: AuthRequest,
   res: Response,
@@ -263,14 +264,22 @@ export const getRecyclingLogs = async (
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 20;
     const skip = (page - 1) * limit;
+    const wasteType = req.query.wasteType as string | undefined;
+
+    // Build filter
+    const filter: Record<string, unknown> = { userId };
+    if (wasteType) {
+      // Case-insensitive match
+      filter.wasteType = { $regex: new RegExp(`^${wasteType}$`, "i") };
+    }
 
     const [logs, total] = await Promise.all([
-      RecyclingLog.find({ userId })
+      RecyclingLog.find(filter)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      RecyclingLog.countDocuments({ userId }),
+      RecyclingLog.countDocuments(filter),
     ]);
 
     return res.status(200).json({

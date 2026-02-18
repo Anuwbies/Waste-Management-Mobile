@@ -146,26 +146,53 @@ const getServiceSigner = (): Wallet => {
 // Custodial Wallet Management (HD Wallet)
 // =============================================================================
 
-const getHDWallet = (): HDNodeWallet => {
+/**
+ * Return the HD node at the BIP-44 account path  m/44'/60'/0'/0
+ * so that child wallets can be derived with a **relative** index.
+ *
+ * Why not just `HDNodeWallet.fromPhrase(mnemonic)`?
+ * In ethers v6 `fromPhrase` returns a node already at the *default*
+ * path  m/44'/60'/0'/0/0  (depth 5).  Calling `derivePath("m/…")`
+ * on a non-root node throws:
+ *   "cannot derive root path for a node at non-zero depth 5"
+ *
+ * By supplying the explicit parent path  m/44'/60'/0'/0  we get a
+ * depth-4 node from which `derivePath("0")`, `derivePath("1")`, …
+ * each produce the correct child without any "m/" prefix.
+ */
+const HD_PARENT_PATH = "m/44'/60'/0'/0";
+
+const getHDParentNode = (): HDNodeWallet => {
   const mnemonic = process.env.HD_WALLET_MNEMONIC;
   if (!mnemonic) {
     throw new Error("HD_WALLET_MNEMONIC is not configured for custodial wallets");
   }
 
-  return HDNodeWallet.fromPhrase(mnemonic);
+  // fromPhrase(phrase, password, path) — the 3rd arg sets the derivation path.
+  return HDNodeWallet.fromPhrase(mnemonic, undefined, HD_PARENT_PATH);
 };
 
 /**
- * Derive a custodial wallet for a user based on their index
- * Path: m/44'/60'/0'/0/{index}
+ * Derive a custodial wallet for a user based on their unique index.
+ * Full derivation path: m/44'/60'/0'/0/{index}
+ *
+ * @param index  Non-negative integer (0, 1, 2, …) — one per user, stored in
+ *               CustodialWallet.derivationIndex.
  */
 export const deriveCustodialWallet = (index: number): { address: string; privateKey: string } => {
-  const hdWallet = getHDWallet();
-  const derivedWallet = hdWallet.derivePath(`m/44'/60'/0'/0/${index}`);
+  if (!Number.isInteger(index) || index < 0) {
+    throw new Error(
+      `deriveCustodialWallet: index must be a non-negative integer, got ${index}`,
+    );
+  }
+
+  const parent = getHDParentNode();
+  // Relative path from the parent node — NO "m/" prefix.
+  const child = parent.derivePath(String(index));
 
   return {
-    address: derivedWallet.address.toLowerCase(),
-    privateKey: derivedWallet.privateKey,
+    address: child.address.toLowerCase(),
+    privateKey: child.privateKey,
   };
 };
 

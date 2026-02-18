@@ -3,6 +3,7 @@ import { Document, Schema, model, Types } from "mongoose";
 export interface ICustodialWallet extends Document {
   userId: Types.ObjectId;
   address: string;
+  encryptedPrivateKey?: string;
   derivationIndex: number;
   isActive: boolean;
   createdAt: Date;
@@ -22,6 +23,10 @@ const custodialWalletSchema = new Schema<ICustodialWallet>(
       required: true,
       unique: true,
       lowercase: true,
+    },
+    encryptedPrivateKey: {
+      type: String,
+      select: false, // never returned by default queries
     },
     derivationIndex: {
       type: Number,

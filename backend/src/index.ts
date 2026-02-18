@@ -9,6 +9,7 @@ import userRoutes from "./routes/userRoutes";
 import authRoutes from "./routes/authRoutes";
 import wasteRoutes from "./routes/wasteRoutes";
 import rewardsRoutes from "./routes/rewardsRoutes";
+import walletRoutes from "./routes/walletRoutes";
 import { getBlockchainHealth } from "./services/blockchainServiceV2";
 import { getAiHealth } from "./services/aiService";
 import { loggerMiddleware, logStartup } from "./middleware/logger";
@@ -72,6 +73,7 @@ app.use("/waste", wasteRoutes);
 app.use("/rewards", rewardsRoutes);
 app.use("/recycle", recycleRoutes);
 app.use("/user", userRoutes);
+app.use("/wallet", walletRoutes);
 
 // Multer file-filter errors → 415; multer limit errors → 400; others → 500
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

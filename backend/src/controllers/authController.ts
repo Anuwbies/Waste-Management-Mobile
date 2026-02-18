@@ -7,7 +7,7 @@ import CustodialWallet from "../models/CustodialWallet";
 import { generateToken, AuthRequest } from "../middleware/auth";
 import { validatePasswordPolicy } from "../validators/passwordPolicy";
 import { sendPasswordResetOtp } from "../services/emailService";
-import { deriveCustodialWallet } from "../services/blockchainServiceV2";
+import { ensureCustodialWallet } from "../services/walletService";
 
 // ---------------------------------------------------------------------------
 // Google OAuth2 client (supports multiple client IDs for Android/iOS/web)
@@ -49,25 +49,14 @@ const hashOtp = (otp: string): string =>
   crypto.createHash("sha256").update(otp).digest("hex");
 
 /** Create a custodial wallet for a newly-created user (best-effort) */
-const ensureCustodialWallet = async (
+const ensureWallet = async (
   userId: string,
 ): Promise<string | undefined> => {
   try {
-    const existing = await CustodialWallet.findOne({ userId });
-    if (existing) return existing.address;
-
-    const lastWallet = await CustodialWallet.findOne().sort({ derivationIndex: -1 });
-    const nextIndex = lastWallet ? lastWallet.derivationIndex + 1 : 0;
-    const { address } = deriveCustodialWallet(nextIndex);
-
-    const wallet = await CustodialWallet.create({
-      userId,
-      address,
-      derivationIndex: nextIndex,
-    });
-    return wallet.address;
+    const { address } = await ensureCustodialWallet(userId);
+    return address;
   } catch {
-    // Non-critical – wallet can be created later during first recycle
+    // Non-critical – wallet can be created later via /wallet/ensure
     return undefined;
   }
 };
@@ -137,7 +126,7 @@ export const register = async (
     });
 
     // Attempt to create custodial wallet
-    const wallet = await ensureCustodialWallet(user._id.toString());
+    const wallet = await ensureWallet(user._id.toString());
 
     if (wallet) {
       user.walletAddress = wallet;
@@ -146,6 +135,11 @@ export const register = async (
 
     return res.status(201).json({
       message: "User registered successfully",
+      token: generateToken({
+        userId: user._id.toString(),
+        email: user.email,
+        name: user.name,
+      }),
       user: userPayload(user, wallet),
     });
   } catch (error) {
@@ -230,6 +224,13 @@ export const login = async (
       await user.save();
     }
 
+    // Ensure custodial wallet exists (migration safety for legacy users)
+    const wallet = await ensureWallet(user._id.toString());
+    if (wallet && user.walletAddress !== wallet) {
+      user.walletAddress = wallet;
+      await user.save();
+    }
+
     // Generate JWT
     const token = generateToken({
       userId: user._id.toString(),
@@ -240,7 +241,7 @@ export const login = async (
     return res.status(200).json({
       message: "Login successful",
       token,
-      user: userPayload(user),
+      user: userPayload(user, wallet),
     });
   } catch (error) {
     return next(error);
@@ -307,6 +308,13 @@ export const googleLogin = async (
         user.emailVerified = true;
       }
       await user.save();
+
+      // Ensure custodial wallet for existing users (migration safety)
+      const wallet = await ensureWallet(user._id.toString());
+      if (wallet && user.walletAddress !== wallet) {
+        user.walletAddress = wallet;
+        await user.save();
+      }
     } else {
       // Create new user
       user = await User.create({
@@ -321,7 +329,7 @@ export const googleLogin = async (
       });
 
       // Create custodial wallet for new user
-      const wallet = await ensureCustodialWallet(user._id.toString());
+      const wallet = await ensureWallet(user._id.toString());
       if (wallet) {
         user.walletAddress = wallet;
         await user.save();
@@ -588,9 +596,16 @@ export const getCurrentUser = async (
       return res.status(404).json({ message: "User not found" });
     }
 
+    // Ensure custodial wallet exists (migration safety)
+    const wallet = await ensureWallet(user._id.toString());
+    if (wallet && user.walletAddress !== wallet) {
+      user.walletAddress = wallet;
+      await user.save();
+    }
+
     return res.status(200).json({
       user: {
-        ...userPayload(user),
+        ...userPayload(user, wallet),
         createdAt: user.createdAt,
       },
     });
