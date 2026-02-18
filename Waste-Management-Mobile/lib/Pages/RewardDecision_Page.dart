@@ -1,7 +1,59 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../config/api_config.dart';
 import '../models/scan_session.dart';
+import '../services/api_client.dart';
 import '../services/recycling_service.dart';
+
+// ---------------------------------------------------------------------------
+// Structured error model – replaces the raw string _errorMessage
+// ---------------------------------------------------------------------------
+
+/// Categories of submission errors shown to the user.
+enum _ErrorKind {
+  imageTooLarge,
+  networkTimeout,
+  sessionExpired,
+  duplicate,
+  serverError,
+  noInternet,
+  unknown,
+}
+
+/// All the data needed to render a user-friendly error screen.
+class _SubmissionError {
+  final _ErrorKind kind;
+
+  /// Short title displayed in large text (e.g. "Image Too Large").
+  final String title;
+
+  /// Longer description that tells the user what to do.
+  final String description;
+
+  /// Optional extra info line (e.g. "Your image: 14.2 MB — limit: 10 MB").
+  final String? detail;
+
+  /// Label for the primary action button.
+  final String primaryAction;
+
+  /// Icon shown in the error hero.
+  final IconData icon;
+
+  /// Colour theme for icon / title.
+  final Color color;
+
+  const _SubmissionError({
+    required this.kind,
+    required this.title,
+    required this.description,
+    this.detail,
+    this.primaryAction = 'Retake Photo',
+    this.icon = Icons.error_outline,
+    this.color = Colors.red,
+  });
+}
 
 /// Reward Decision Page
 /// Shows the result of the recycling submission:
@@ -25,7 +77,9 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
   late ScanSession _session;
   final RecyclingService _recyclingService = RecyclingService();
   bool _isSubmitting = true;
-  String? _errorMessage;
+
+  /// Structured error — null when there is no error.
+  _SubmissionError? _error;
 
   /// Idempotency key — stays the same across retries for the same session
   late final String _idempotencyKey;
@@ -37,7 +91,8 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
   void initState() {
     super.initState();
     _session = widget.session;
-    _idempotencyKey = '${DateTime.now().millisecondsSinceEpoch}_${_session.classification!.label}';
+    _idempotencyKey =
+        '${DateTime.now().millisecondsSinceEpoch}_${_session.classification!.label}';
 
     // Setup success animation
     _animationController = AnimationController(
@@ -58,11 +113,152 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
     super.dispose();
   }
 
+  // -----------------------------------------------------------------------
+  // Error mapping
+  // -----------------------------------------------------------------------
+
+  /// Convert any caught exception into a user-friendly [_SubmissionError].
+  _SubmissionError _mapError(Object error) {
+    // --- ApiException (most backend errors) ---
+    if (error is ApiException) {
+      final code = error.statusCode;
+      final msg = error.message.toLowerCase();
+
+      // 413 – payload / image too large
+      if (code == 413 || msg.contains('entity too large') || msg.contains('too large')) {
+        return _SubmissionError(
+          kind: _ErrorKind.imageTooLarge,
+          title: 'Image Too Large',
+          description:
+              'The selected image exceeds the maximum allowed size.\n'
+              'Please choose a smaller image or retake the photo.',
+          detail: _imageSizeDetail(),
+          primaryAction: 'Retake Photo',
+          icon: Icons.photo_size_select_large,
+          color: Colors.orange,
+        );
+      }
+
+      // 401 – session expired
+      if (code == 401) {
+        return const _SubmissionError(
+          kind: _ErrorKind.sessionExpired,
+          title: 'Session Expired',
+          description:
+              'Your login session has expired.\nPlease log in again to continue.',
+          primaryAction: 'Go to Login',
+          icon: Icons.lock_outline,
+          color: Color(0xFFEF6C00),
+        );
+      }
+
+      // 409 – duplicate
+      if (code == 409) {
+        return const _SubmissionError(
+          kind: _ErrorKind.duplicate,
+          title: 'Already Submitted',
+          description:
+              'This item was already submitted for a reward.\nScan a new item instead.',
+          primaryAction: 'Scan New Item',
+          icon: Icons.content_copy,
+          color: Colors.blueGrey,
+        );
+      }
+
+      // 5xx – server error
+      if (code != null && code >= 500) {
+        return const _SubmissionError(
+          kind: _ErrorKind.serverError,
+          title: 'Server Error',
+          description:
+              'Our servers are having trouble right now.\nPlease try again in a few moments.',
+          primaryAction: 'Try Again',
+          icon: Icons.cloud_off,
+          color: Colors.red,
+        );
+      }
+
+      // No internet (ApiClient wraps SocketException with this message)
+      if (msg.contains('no internet')) {
+        return const _SubmissionError(
+          kind: _ErrorKind.noInternet,
+          title: 'No Internet',
+          description:
+              "It looks like you're offline.\nCheck your Wi-Fi or mobile data and try again.",
+          primaryAction: 'Try Again',
+          icon: Icons.wifi_off,
+          color: Colors.blueGrey,
+        );
+      }
+    }
+
+    // --- Timeout ---
+    if (error is TimeoutException || error is SocketException) {
+      return const _SubmissionError(
+        kind: _ErrorKind.networkTimeout,
+        title: 'Connection Problem',
+        description:
+            'The request timed out or the network is unreachable.\n'
+            'Please check your connection and try again.',
+        primaryAction: 'Try Again',
+        icon: Icons.signal_wifi_connected_no_internet_4,
+        color: Colors.orange,
+      );
+    }
+
+    // --- Fallback ---
+    return const _SubmissionError(
+      kind: _ErrorKind.unknown,
+      title: 'Something Went Wrong',
+      description:
+          'An unexpected error occurred.\nPlease try again or retake your photo.',
+      primaryAction: 'Try Again',
+      icon: Icons.warning_amber_rounded,
+      color: Colors.red,
+    );
+  }
+
+  /// Build an optional detail string showing actual vs allowed image size.
+  String? _imageSizeDetail() {
+    try {
+      final bytes = _session.imageFile.lengthSync();
+      final actualMB = (bytes / (1024 * 1024)).toStringAsFixed(1);
+      final limitMB =
+          (ApiConfig.maxUploadSize / (1024 * 1024)).toStringAsFixed(0);
+      return 'Your image: $actualMB MB  •  Maximum allowed: $limitMB MB';
+    } catch (_) {
+      final limitMB =
+          (ApiConfig.maxUploadSize / (1024 * 1024)).toStringAsFixed(0);
+      return 'Maximum allowed size: $limitMB MB';
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Submission
+  // -----------------------------------------------------------------------
+
   Future<void> _submitForReward() async {
+    // ── Client-side confidence guard (defense in depth) ──────────────
+    final confidence = _session.classification?.confidence ?? 0;
+    if (confidence < ApiConfig.cnnConfidenceThreshold) {
+      if (!mounted) return;
+      setState(() {
+        _isSubmitting = false;
+        _session = _session.copyWithDecision(
+          RewardDecision.denied(
+            'Confidence too low (${(confidence * 100).toStringAsFixed(1)}%). '
+            'At least ${(ApiConfig.cnnConfidenceThreshold * 100).toStringAsFixed(0)}% is required.',
+          ),
+        );
+      });
+      _animationController.forward();
+      return;
+    }
+
     try {
       setState(() {
         _isSubmitting = true;
-        _errorMessage = null;
+        _error = null;
       });
 
       final decision = await _recyclingService.submitRecyclingEvent(
@@ -72,6 +268,7 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
         idempotencyKey: _idempotencyKey,
       );
 
+      if (!mounted) return;
       setState(() {
         _session = _session.copyWithDecision(decision);
         _isSubmitting = false;
@@ -85,9 +282,10 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
         HapticFeedback.lightImpact();
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isSubmitting = false;
-        _errorMessage = e.toString();
+        _error = _mapError(e);
       });
     }
   }
@@ -95,17 +293,30 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
   RewardDecision? get _decision => _session.decision;
 
   void _goHome() {
-    // Pop all and go to home
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   void _scanAgain() {
-    // Pop all except home then navigate to camera
     Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   void _retry() {
     _submitForReward();
+  }
+
+  /// Primary error-button handler — action depends on error kind.
+  void _onErrorPrimaryAction() {
+    switch (_error?.kind) {
+      case _ErrorKind.imageTooLarge:
+      case _ErrorKind.duplicate:
+        _scanAgain();
+        break;
+      case _ErrorKind.sessionExpired:
+        _goHome(); // home screen redirects to login
+        break;
+      default:
+        _retry();
+    }
   }
 
   @override
@@ -115,7 +326,7 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
       body: SafeArea(
         child: _isSubmitting
             ? _buildSubmittingState()
-            : _errorMessage != null
+            : _error != null
                 ? _buildErrorState()
                 : _buildResultState(),
       ),
@@ -123,7 +334,7 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
   }
 
   Color _getBackgroundColor() {
-    if (_isSubmitting || _errorMessage != null) {
+    if (_isSubmitting || _error != null) {
       return const Color(0xFFF5F5F5);
     }
     switch (_decision?.status) {
@@ -198,66 +409,151 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
   }
 
   Widget _buildErrorState() {
-    return Padding(
-      padding: const EdgeInsets.all(24),
+    final err = _error!;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          const SizedBox(height: 24),
+
+          // ── Hero icon ──────────────────────────────────────────────
           Container(
-            width: 100,
-            height: 100,
+            width: 110,
+            height: 110,
             decoration: BoxDecoration(
-              color: Colors.red.withOpacity(0.1),
+              color: err.color.withOpacity(0.12),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.error_outline,
-              color: Colors.red,
-              size: 50,
-            ),
+            child: Icon(err.icon, color: err.color, size: 52),
           ),
-          const SizedBox(height: 24),
-          const Text(
-            'Submission Failed',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.red,
-            ),
-          ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 28),
+
+          // ── Title ──────────────────────────────────────────────────
           Text(
-            _errorMessage!,
+            err.title,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+              color: err.color,
             ),
           ),
-          const SizedBox(height: 32),
-          ElevatedButton(
-            onPressed: _retry,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+          const SizedBox(height: 14),
+
+          // ── Description ────────────────────────────────────────────
+          Text(
+            err.description,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 15,
+              height: 1.5,
+              color: Colors.grey[700],
+            ),
+          ),
+
+          // ── Optional detail chip (e.g. image size) ─────────────────
+          if (err.detail != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                color: err.color.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: err.color.withOpacity(0.25)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.info_outline, size: 18, color: err.color),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      err.detail!,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: err.color,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: const Text(
-              'Try Again',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ],
+
+          const SizedBox(height: 36),
+
+          // ── Primary action button ──────────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _onErrorPrimaryAction,
+              icon: Icon(_primaryActionIcon(err.kind)),
+              label: Text(
+                err.primaryAction,
+                style: const TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: err.color,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                elevation: 2,
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-          TextButton(
-            onPressed: _goHome,
-            child: const Text('Go Home'),
+          const SizedBox(height: 14),
+
+          // ── Secondary: Go Home ─────────────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton(
+              onPressed: _goHome,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.grey[700],
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                side: BorderSide(color: Colors.grey[400]!),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.home, size: 20),
+                  SizedBox(width: 8),
+                  Text('Go Home', style: TextStyle(fontSize: 16)),
+                ],
+              ),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  /// Pick an icon for the primary error-action button.
+  IconData _primaryActionIcon(_ErrorKind kind) {
+    switch (kind) {
+      case _ErrorKind.imageTooLarge:
+        return Icons.camera_alt;
+      case _ErrorKind.duplicate:
+        return Icons.qr_code_scanner;
+      case _ErrorKind.sessionExpired:
+        return Icons.login;
+      case _ErrorKind.networkTimeout:
+      case _ErrorKind.noInternet:
+      case _ErrorKind.serverError:
+      case _ErrorKind.unknown:
+        return Icons.refresh;
+    }
   }
 
   Widget _buildResultState() {
@@ -582,14 +878,16 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
   }
 
   Widget _buildActionButtons() {
+    final isDenied = _decision?.status == RewardStatus.denied;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Primary - scan again
+        // Primary – Retake Photo (for denied) or Scan Another (for approved/pending)
         ElevatedButton(
           onPressed: _scanAgain,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green,
+            backgroundColor: isDenied ? Colors.orange : Colors.green,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(
@@ -597,14 +895,14 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
             ),
             elevation: 2,
           ),
-          child: const Row(
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.camera_alt),
-              SizedBox(width: 8),
+              const Icon(Icons.camera_alt),
+              const SizedBox(width: 8),
               Text(
-                'Scan Another Item',
-                style: TextStyle(
+                isDenied ? 'Retake Photo' : 'Scan Another Item',
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),

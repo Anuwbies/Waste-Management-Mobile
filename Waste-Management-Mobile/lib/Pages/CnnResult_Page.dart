@@ -63,9 +63,9 @@ class _CnnResultPageState extends State<CnnResultPage> {
     if (_meetsThreshold) {
       return 'High confidence classification';
     } else if (_isWarning) {
-      return 'Low confidence \u2014 rewards may not be approved';
+      return 'Confidence too low to qualify for rewards. Please retake the photo.';
     } else {
-      return 'Moderate confidence \u2014 proceed with caution';
+      return 'Confidence below reward threshold \u2014 retake for a clearer image';
     }
   }
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../config/api_config.dart';
 import '../models/scan_session.dart';
 import '../services/waste_service.dart';
 import 'RewardDecision_Page.dart';
@@ -62,6 +63,11 @@ class _LlmSuggestionPageState extends State<LlmSuggestionPage> {
 
   DisposalSuggestion? get _suggestion => _session.suggestion;
 
+  /// Whether the CNN confidence meets the reward threshold.
+  bool get _meetsRewardThreshold =>
+      (_session.classification?.confidence ?? 0) >=
+      ApiConfig.cnnConfidenceThreshold;
+
   void _proceedToReward() {
     Navigator.push(
       context,
@@ -118,6 +124,9 @@ class _LlmSuggestionPageState extends State<LlmSuggestionPage> {
         children: [
           // Warning banner if using fallback
           if (_errorMessage != null) _buildWarningBanner(),
+
+          // Low-confidence reward banner
+          if (!_meetsRewardThreshold) _buildLowConfidenceBanner(),
 
           // Header with waste type
           _buildHeader(),
@@ -534,30 +543,86 @@ class _LlmSuggestionPageState extends State<LlmSuggestionPage> {
     );
   }
 
+  /// Banner shown when confidence is below the reward threshold.
+  Widget _buildLowConfidenceBanner() {
+    final pct = ((_session.classification?.confidence ?? 0) * 100)
+        .toStringAsFixed(1);
+    final threshPct =
+        (ApiConfig.cnnConfidenceThreshold * 100).toStringAsFixed(0);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.warning_amber_rounded,
+              color: Colors.red.shade700, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Confidence too low for rewards',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red.shade800,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Your classification confidence is $pct%, '
+                  'but at least $threshPct% is required.\n'
+                  'You can still view disposal instructions below, '
+                  'but reward submission is disabled.',
+                  style: TextStyle(
+                    color: Colors.red.shade700,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActionButtons() {
+    final canSubmit = _suggestion != null && _meetsRewardThreshold;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Primary action - submit for reward
+        // Primary action - submit for reward (disabled when below threshold)
         ElevatedButton(
-          onPressed: _suggestion != null ? _proceedToReward : null,
+          onPressed: canSubmit ? _proceedToReward : null,
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green,
+            backgroundColor: canSubmit ? Colors.green : Colors.grey[400],
             foregroundColor: Colors.white,
+            disabledBackgroundColor: Colors.grey[300],
+            disabledForegroundColor: Colors.grey[500],
             padding: const EdgeInsets.symmetric(vertical: 16),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
-            elevation: 2,
+            elevation: canSubmit ? 2 : 0,
           ),
-          child: const Row(
+          child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.check_circle),
-              SizedBox(width: 8),
+              Icon(canSubmit ? Icons.check_circle : Icons.block, size: 22),
+              const SizedBox(width: 8),
               Text(
-                'Submit for Rewards',
-                style: TextStyle(
+                canSubmit ? 'Submit for Rewards' : 'Rewards Unavailable',
+                style: const TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                 ),
@@ -565,7 +630,51 @@ class _LlmSuggestionPageState extends State<LlmSuggestionPage> {
             ],
           ),
         ),
+
+        // Hint text when disabled
+        if (!_meetsRewardThreshold)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Retake the photo for a clearer image to qualify for rewards.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+            ),
+          ),
+
         const SizedBox(height: 12),
+
+        // Retake photo (prominent when below threshold)
+        if (!_meetsRewardThreshold)
+          ElevatedButton(
+            onPressed: () {
+              // Pop back two pages (LlmSuggestion → CnnResult → Camera)
+              Navigator.pop(context);
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 2,
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.camera_alt),
+                SizedBox(width: 8),
+                Text(
+                  'Retake Photo',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+
+        if (!_meetsRewardThreshold) const SizedBox(height: 12),
 
         // Secondary action - go back
         OutlinedButton(

@@ -7,6 +7,7 @@ import User from "../models/User";
 import RewardHistory from "../models/RewardHistory";
 import { calculateRewardPoints } from "../services/rewardService";
 import { classifyImage, AiClassificationResult } from "../services/aiService";
+import { CNN_CONFIDENCE_THRESHOLD } from "../config/env";
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, "..", "..", "uploads");
@@ -14,8 +15,8 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Confidence threshold below which rewards are denied
-const REWARD_CONFIDENCE_THRESHOLD = 0.40;
+// Use centralised threshold from env.ts (default 0.80)
+const REWARD_CONFIDENCE_THRESHOLD = CNN_CONFIDENCE_THRESHOLD;
 
 // Canonical waste types that qualify for rewards
 const REWARDABLE_TYPES = new Set([

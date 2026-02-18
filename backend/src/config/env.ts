@@ -30,3 +30,16 @@ for (const key of required) {
 // If SMTP vars are missing the email service falls back to console logging
 // (dev-only), so the forgot-password flow still works during development.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// AI / Classification Config
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimum CNN confidence (0..1) required to approve a reward.
+ * Submissions below this threshold are denied — no blockchain tx, no points.
+ * Override via CNN_CONFIDENCE_THRESHOLD env var.
+ */
+export const CNN_CONFIDENCE_THRESHOLD: number = parseFloat(
+  process.env.CNN_CONFIDENCE_THRESHOLD ?? "0.80"
+);

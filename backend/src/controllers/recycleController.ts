@@ -17,6 +17,7 @@ import {
   computeImageHash,
 } from "../services/blockchainServiceV2";
 import { calculateRewardPoints } from "../services/rewardService";
+import { CNN_CONFIDENCE_THRESHOLD } from "../config/env";
 
 /**
  * Get or create custodial wallet for user
@@ -78,8 +79,23 @@ export const recycleWaste = async (
     }
 
     const qty = quantity || 1;
-    const rewardPoints = calculateRewardPoints(wasteType) * qty;
     const timestamp = Date.now();
+
+    // ── Confidence gating (source of truth) ──────────────────────────
+    // metadata.confidence is sent by the mobile client from the CNN step.
+    // If confidence is below the threshold, DENY the reward — no blockchain
+    // call, no points, no reward-history entry.
+    const confidence: number | undefined =
+      (req.body as any).metadata?.confidence != null
+        ? Number((req.body as any).metadata.confidence)
+        : undefined;
+
+    const isDenied =
+      confidence !== undefined && confidence < CNN_CONFIDENCE_THRESHOLD;
+
+    const rewardPoints = isDenied
+      ? 0
+      : calculateRewardPoints(wasteType) * qty;
 
     // Compute image hash if provided
     let imageHash: string | undefined;
@@ -132,6 +148,39 @@ export const recycleWaste = async (
     const wasteTypeEnum = mapWasteTypeToEnum(wasteType);
     const chainId = await getCurrentChainId();
 
+    // ── Denied path — lightweight, no blockchain, no reward writes ──
+    if (isDenied) {
+      console.log(
+        `[recycleController] DENIED: confidence=${confidence?.toFixed(3)} < threshold=${CNN_CONFIDENCE_THRESHOLD} (${wasteType})`
+      );
+
+      // Still create a log so the user can see the attempt
+      const recyclingLog = await RecyclingLog.create({
+        userId,
+        wasteType,
+        quantity: qty,
+        rewardPoints: 0,
+      });
+
+      return res.status(200).json({
+        message:
+          "Classification confidence too low — reward denied. Try a clearer photo.",
+        status: "denied",
+        reason: "Low confidence",
+        confidence,
+        log: {
+          id: recyclingLog._id,
+          wasteType,
+          quantity: qty,
+          rewardPoints: 0,
+          status: "denied",
+        },
+        totalRewards: user.totalRewards,
+      });
+    }
+
+    // ── Approved path — full blockchain + reward flow ─────────────────
+
     // Create recycling event (pending status)
     const recyclingEvent = await RecyclingEvent.create({
       eventHash,
@@ -140,6 +189,7 @@ export const recycleWaste = async (
       wasteType,
       imageHash,
       rewardPoints,
+      aiConfidence: confidence,
       status: "pending",
       chainId,
       metadata: {
@@ -231,8 +281,14 @@ export const recycleWaste = async (
       }
     }
 
+    console.log(
+      `[recycleController] APPROVED: confidence=${confidence?.toFixed(3)} wasteType=${wasteType} points=${rewardPoints}`
+    );
+
     return res.status(200).json({
       message: "Recycling activity recorded",
+      status: "approved",
+      confidence,
       log: {
         id: recyclingLog._id,
         eventId: recyclingEvent._id,
