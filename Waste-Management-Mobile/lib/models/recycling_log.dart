@@ -7,7 +7,9 @@ class RecyclingLog {
   final int quantity;
   final int rewardPoints;
   final String? txHash;
+  final String? status; // pending | confirmed | failed | duplicate
   final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   RecyclingLog({
     required this.id,
@@ -15,7 +17,9 @@ class RecyclingLog {
     this.quantity = 1,
     this.rewardPoints = 0,
     this.txHash,
+    this.status,
     this.createdAt,
+    this.updatedAt,
   });
 
   factory RecyclingLog.fromJson(Map<String, dynamic> json) {
@@ -25,8 +29,12 @@ class RecyclingLog {
       quantity: (json['quantity'] as num?)?.toInt() ?? 1,
       rewardPoints: (json['rewardPoints'] as num?)?.toInt() ?? 0,
       txHash: json['txHash'] as String?,
-      createdAt: json['createdAt'] != null 
-          ? DateTime.tryParse(json['createdAt'] as String) 
+      status: json['status'] as String?,
+      createdAt: json['createdAt'] != null
+          ? DateTime.tryParse(json['createdAt'].toString())
+          : null,
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.tryParse(json['updatedAt'].toString())
           : null,
     );
   }
@@ -38,7 +46,9 @@ class RecyclingLog {
       'quantity': quantity,
       'rewardPoints': rewardPoints,
       'txHash': txHash,
+      'status': status,
       'createdAt': createdAt?.toIso8601String(),
+      'updatedAt': updatedAt?.toIso8601String(),
     };
   }
 }

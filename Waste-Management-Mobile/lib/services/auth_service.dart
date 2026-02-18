@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:waste_management/config/api_config.dart';
 import '../models/auth_response.dart';
 import 'api_client.dart';
 
@@ -11,7 +12,7 @@ class AuthService extends ChangeNotifier {
   AuthService._internal();
 
   final ApiClient _api = ApiClient();
-  final GoogleSignIn _googleSignIn = GoogleSignIn(serverClientId: "127507564653-ev16rej74t096hhhlhpb240a0k1f90j7.apps.googleusercontent.com");
+  final GoogleSignIn _googleSignIn = GoogleSignIn(serverClientId: ApiConfig.googleServerClientId);
 
   // Current user state
   UserData? _currentUser;
@@ -99,6 +100,10 @@ class AuthService extends ChangeNotifier {
         await _api.setUserData(authResponse.user!.toJson());
         _currentUser = authResponse.user;
         notifyListeners();
+
+        // Auto-ensure wallet for legacy users without one
+        await _autoEnsureWallet();
+
         _setLoading(false);
         return true;
       }
@@ -171,6 +176,10 @@ class AuthService extends ChangeNotifier {
         await _api.setUserData(authResponse.user!.toJson());
         _currentUser = authResponse.user;
         notifyListeners();
+
+        // Auto-ensure wallet for Google users
+        await _autoEnsureWallet();
+
         _setLoading(false);
         return true;
       }
@@ -252,6 +261,48 @@ class AuthService extends ChangeNotifier {
       _setError('Failed to update profile');
       _setLoading(false);
       return false;
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // Wallet
+  // ----------------------------------------------------------------
+
+  /// Explicitly request wallet provisioning from the backend.
+  /// Returns the wallet address on success, or null on failure.
+  Future<String?> ensureWallet() async {
+    try {
+      final response = await _api.post('/wallet/ensure');
+      final address = response['walletAddress'] as String?;
+      if (address != null && address.isNotEmpty) {
+        // Update local user cache
+        if (_currentUser != null) {
+          _currentUser = UserData(
+            id: _currentUser!.id,
+            email: _currentUser!.email,
+            name: _currentUser!.name,
+            photoUrl: _currentUser!.photoUrl,
+            walletAddress: address,
+            totalRewards: _currentUser!.totalRewards,
+          );
+          await _api.setUserData(_currentUser!.toJson());
+          notifyListeners();
+        }
+        return address;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('ensureWallet error: $e');
+      return null;
+    }
+  }
+
+  /// Auto-ensure wallet after login/register if user has no walletAddress.
+  /// Best-effort — silently ignores failures.
+  Future<void> _autoEnsureWallet() async {
+    final wallet = _currentUser?.walletAddress;
+    if (wallet == null || wallet.isEmpty) {
+      await ensureWallet();
     }
   }
 

@@ -1,5 +1,5 @@
 /// API Configuration
-/// 
+///
 /// Change these values based on your environment:
 /// - Development (Android Emulator): http://10.0.2.2:5000
 /// - Development (iOS Simulator): http://localhost:5000
@@ -11,13 +11,19 @@ class ApiConfig {
   ApiConfig._();
 
   /// Base URL for API requests
-  /// 
+  ///
   /// Android Emulator: 10.0.2.2 points to host machine's localhost
   /// iOS Simulator: localhost works directly
   /// Physical device: use your computer's local IP address
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: 'http://10.0.2.2:5000',
+  );
+
+  static const String googleServerClientId = String.fromEnvironment(
+    'GOOGLE_SERVER_CLIENT_ID',
+    defaultValue:
+        '127507564653-ev16rej74t096hhhlhpb240a0k1f90j7.apps.googleusercontent.com',
   );
 
   /// API timeout duration
@@ -43,7 +49,7 @@ class ApiConfig {
   // ============================================================
   // Authentication Endpoints
   // ============================================================
-  
+
   static const String authRegister = '/auth/register';
   static const String authLogin = '/auth/login';
   static const String authGoogle = '/auth/google';
@@ -60,7 +66,7 @@ class ApiConfig {
   static const String wasteUpload = '/waste/upload';
   static const String wasteClassify = '/waste/classify';
   static const String wasteHistory = '/waste/history';
-  
+
   /// Disposal suggestion endpoint (LLM-based)
   static const String wasteSuggestion = '/waste/suggestion';
 
@@ -80,6 +86,12 @@ class ApiConfig {
   static const String rewardsStats = '/rewards/stats';
   static const String rewardsOptions = '/rewards/options';
   static const String rewardsRedeem = '/rewards/redeem';
+
+  // ============================================================
+  // Wallet Endpoints
+  // ============================================================
+
+  static const String walletEnsure = '/wallet/ensure';
 
   // ============================================================
   // Health / Diagnostics Endpoints

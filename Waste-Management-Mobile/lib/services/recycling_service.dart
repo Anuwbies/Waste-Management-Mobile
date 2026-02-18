@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import '../models/recycling_log.dart';
 import '../models/scan_session.dart';
 import '../config/api_config.dart';
@@ -96,24 +97,38 @@ class RecyclingService {
     }
   }
 
-  /// Get recycling logs
+  /// Get recycling logs with optional waste-type filter
   Future<RecyclingLogsResponse> getLogs({
     int page = 1,
     int limit = 20,
+    String? wasteType,
   }) async {
     try {
+      final queryParams = <String, String>{
+        'page': page.toString(),
+        'limit': limit.toString(),
+      };
+      if (wasteType != null && wasteType.isNotEmpty) {
+        queryParams['wasteType'] = wasteType;
+      }
+
       final response = await _api.get(
         ApiConfig.recycleLogs,
-        queryParams: {
-          'page': page.toString(),
-          'limit': limit.toString(),
-        },
+        queryParams: queryParams,
       );
 
-      return RecyclingLogsResponse.fromJson(response);
+      final result = RecyclingLogsResponse.fromJson(response);
+      if (kDebugMode) {
+        print('[RecyclingService] getLogs => '
+            '${result.logs.length} items, '
+            'page ${result.pagination.page}/${result.pagination.totalPages}, '
+            'total ${result.pagination.total}');
+      }
+      return result;
     } on ApiException {
       rethrow;
     } catch (e) {
+      if (kDebugMode) print('[RecyclingService] getLogs error: $e');
       throw ApiException('Failed to load recycling logs');
     }
   }

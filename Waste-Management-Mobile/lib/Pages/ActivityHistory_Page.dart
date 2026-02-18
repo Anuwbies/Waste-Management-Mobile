@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/recycling_log.dart';
+import '../services/api_client.dart';
 import '../services/recycling_service.dart';
 
 class ActivityHistoryPage extends StatefulWidget {
@@ -19,11 +21,12 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
   bool _isLoadingMore = false;
   bool _hasMore = true;
   int _currentPage = 1;
+  int _totalFromServer = 0; // total count from pagination metadata
   String? _error;
 
-  // Filter state
+  // Filter state — server-side filtering via ?wasteType= query param
   String? _selectedWasteType;
-  final List<String> _wasteTypes = [
+  static const List<String> _wasteTypes = [
     'All',
     'Plastic',
     'Paper',
@@ -53,7 +56,10 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
     }
   }
 
+  /// Primary fetch — resets list, fetches page 1.
+  /// Uses the same [RecyclingService.getLogs] as Home_Page.dart.
   Future<void> _loadLogs() async {
+    if (!mounted) return;
     setState(() {
       _isLoading = true;
       _error = null;
@@ -63,66 +69,114 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
       final response = await _recyclingService.getLogs(
         page: 1,
         limit: 20,
+        wasteType: _selectedWasteType, // server-side filter (null = all)
       );
 
+      if (!mounted) return;
       setState(() {
         _logs = response.logs;
         _currentPage = 1;
-        _hasMore = response.pagination.page < response.pagination.totalPages;
+        _totalFromServer = response.pagination.total;
+        _hasMore =
+            response.pagination.page < response.pagination.totalPages;
         _isLoading = false;
       });
+
+      if (kDebugMode) {
+        print('[ActivityHistory] loaded ${response.logs.length} logs '
+            '(total: ${response.pagination.total}, '
+            'filter: ${_selectedWasteType ?? "all"})');
+      }
+    } on ApiException catch (e) {
+      if (kDebugMode) {
+        print('[ActivityHistory] ApiException: '
+            'status=${e.statusCode}, msg=${e.message}');
+      }
+      if (!mounted) return;
+      setState(() {
+        _error = e.statusCode == 401
+            ? 'Session expired — please log in again'
+            : 'Failed to load activity history';
+        _isLoading = false;
+      });
+      _showErrorSnackBar(e.message);
     } catch (e) {
+      if (kDebugMode) print('[ActivityHistory] unexpected error: $e');
+      if (!mounted) return;
       setState(() {
         _error = 'Failed to load activity history';
         _isLoading = false;
       });
+      _showErrorSnackBar('$e');
     }
   }
 
+  /// Infinite-scroll — appends next page to existing list.
   Future<void> _loadMore() async {
     if (_isLoadingMore || !_hasMore) return;
 
-    setState(() {
-      _isLoadingMore = true;
-    });
+    setState(() => _isLoadingMore = true);
 
     try {
       final response = await _recyclingService.getLogs(
         page: _currentPage + 1,
         limit: 20,
+        wasteType: _selectedWasteType,
       );
 
+      if (!mounted) return;
       setState(() {
         _logs.addAll(response.logs);
         _currentPage = response.pagination.page;
-        _hasMore = response.pagination.page < response.pagination.totalPages;
+        _totalFromServer = response.pagination.total;
+        _hasMore =
+            response.pagination.page < response.pagination.totalPages;
         _isLoadingMore = false;
       });
+
+      if (kDebugMode) {
+        print('[ActivityHistory] loadMore => page $_currentPage, '
+            '+${response.logs.length} items, total in list: ${_logs.length}');
+      }
     } catch (e) {
-      setState(() {
-        _isLoadingMore = false;
-      });
+      if (kDebugMode) print('[ActivityHistory] loadMore error: $e');
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
     }
   }
 
-  List<RecyclingLog> get _filteredLogs {
-    if (_selectedWasteType == null || _selectedWasteType == 'All') {
-      return _logs;
-    }
-    return _logs
-        .where((log) =>
-            log.wasteType.toLowerCase() == _selectedWasteType!.toLowerCase())
-        .toList();
+  /// Changing filter chip triggers a fresh server fetch.
+  void _onFilterChanged(String type) {
+    final newFilter = type == 'All' ? null : type;
+    if (newFilter == _selectedWasteType) return;
+    setState(() => _selectedWasteType = newFilter);
+    _loadLogs(); // re-fetch from server with new wasteType param
   }
+
+  // ── Computed stats ──────────────────────────────────────────────────────
+  int get _totalItems => _totalFromServer;
 
   int get _totalPoints {
-    int total = 0;
-    for (final log in _filteredLogs) {
-      total += log.rewardPoints;
+    int pts = 0;
+    for (final log in _logs) {
+      pts += log.rewardPoints;
     }
-    return total;
+    return pts;
   }
 
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  void _showErrorSnackBar(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        behavior: SnackBarBehavior.floating,
+        action: SnackBarAction(label: 'Retry', onPressed: _loadLogs),
+      ),
+    );
+  }
+
+  // ── Build ───────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -155,7 +209,7 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: _SummaryCard(
-                          totalItems: _filteredLogs.length,
+                          totalItems: _totalItems,
                           totalPoints: _totalPoints,
                         ),
                       ),
@@ -170,22 +224,19 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
                           itemCount: _wasteTypes.length,
                           itemBuilder: (context, index) {
                             final type = _wasteTypes[index];
-                            final isSelected = (_selectedWasteType == null &&
-                                    type == 'All') ||
-                                _selectedWasteType == type;
+                            final isSelected =
+                                (_selectedWasteType == null &&
+                                        type == 'All') ||
+                                    _selectedWasteType == type;
 
                             return Padding(
                               padding: const EdgeInsets.only(right: 8),
                               child: FilterChip(
                                 selected: isSelected,
                                 label: Text(type),
-                                onSelected: (_) {
-                                  setState(() {
-                                    _selectedWasteType =
-                                        type == 'All' ? null : type;
-                                  });
-                                },
-                                selectedColor: Colors.blue.withValues(alpha: 0.2),
+                                onSelected: (_) => _onFilterChanged(type),
+                                selectedColor:
+                                    Colors.blue.withValues(alpha: 0.2),
                                 checkmarkColor: Colors.blue,
                                 labelStyle: TextStyle(
                                   color: isSelected
@@ -204,27 +255,28 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
 
                       // Logs list
                       Expanded(
-                        child: _filteredLogs.isEmpty
+                        child: _logs.isEmpty
                             ? _buildEmptyState()
                             : ListView.builder(
                                 controller: _scrollController,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 20),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20),
                                 itemCount:
-                                    _filteredLogs.length + (_isLoadingMore ? 1 : 0),
+                                    _logs.length + (_isLoadingMore ? 1 : 0),
                                 itemBuilder: (context, index) {
-                                  if (index == _filteredLogs.length) {
+                                  if (index == _logs.length) {
                                     return const Padding(
                                       padding: EdgeInsets.all(16),
                                       child: Center(
-                                        child: CircularProgressIndicator(),
-                                      ),
+                                          child:
+                                              CircularProgressIndicator()),
                                     );
                                   }
                                   return _ActivityLogCard(
-                                    log: _filteredLogs[index],
+                                    log: _logs[index],
                                     isFirst: index == 0,
-                                    isLast: index == _filteredLogs.length - 1,
+                                    isLast:
+                                        index == _logs.length - 1,
                                   );
                                 },
                               ),
@@ -242,11 +294,15 @@ class _ActivityHistoryPageState extends State<ActivityHistoryPage> {
         children: [
           Icon(Icons.error_outline, size: 64, color: Colors.grey.shade400),
           const SizedBox(height: 16),
-          Text(
-            _error!,
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey.shade600,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey.shade600,
+              ),
             ),
           ),
           const SizedBox(height: 16),
@@ -323,7 +379,7 @@ class _SummaryCard extends StatelessWidget {
           Expanded(
             child: Column(
               children: [
-                Icon(Icons.recycling, color: Colors.green, size: 28),
+                const Icon(Icons.recycling, color: Colors.green, size: 28),
                 const SizedBox(height: 8),
                 Text(
                   '$totalItems',
@@ -351,7 +407,7 @@ class _SummaryCard extends StatelessWidget {
           Expanded(
             child: Column(
               children: [
-                Icon(Icons.stars, color: Colors.amber, size: 28),
+                const Icon(Icons.stars, color: Colors.amber, size: 28),
                 const SizedBox(height: 8),
                 Text(
                   '$totalPoints',
@@ -446,18 +502,8 @@ class _ActivityLogCard extends StatelessWidget {
     if (diff.inDays < 7) return '${diff.inDays} days ago';
 
     final months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec'
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
   }
@@ -467,6 +513,37 @@ class _ActivityLogCard extends StatelessWidget {
     return '${text[0].toUpperCase()}${text.substring(1)}';
   }
 
+  // ── Status badge helpers ─────────────────────────────────────────────
+  Color _statusColor(String? status) {
+    switch (status) {
+      case 'confirmed':
+        return Colors.green;
+      case 'pending':
+        return Colors.orange;
+      case 'failed':
+        return Colors.red;
+      case 'duplicate':
+        return Colors.grey;
+      default:
+        return Colors.green; // treat no-status as confirmed
+    }
+  }
+
+  String _statusLabel(String? status) {
+    switch (status) {
+      case 'confirmed':
+        return 'Confirmed';
+      case 'pending':
+        return 'Pending';
+      case 'failed':
+        return 'Failed';
+      case 'duplicate':
+        return 'Duplicate';
+      default:
+        return 'Approved';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final wasteType = log.wasteType;
@@ -474,9 +551,7 @@ class _ActivityLogCard extends StatelessWidget {
     final color = _getWasteColor(wasteType);
 
     return Container(
-      margin: EdgeInsets.only(
-        bottom: isLast ? 20 : 0,
-      ),
+      margin: EdgeInsets.only(bottom: isLast ? 20 : 0),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(
@@ -488,10 +563,7 @@ class _ActivityLogCard extends StatelessWidget {
       child: Column(
         children: [
           if (!isFirst)
-            Divider(
-              height: 1,
-              color: Colors.grey.shade200,
-            ),
+            Divider(height: 1, color: Colors.grey.shade200),
           Padding(
             padding: const EdgeInsets.all(16),
             child: Row(
@@ -512,13 +584,38 @@ class _ActivityLogCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        _capitalizeFirst(wasteType),
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 16,
-                          color: Color(0xFF1A1A2E),
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            _capitalizeFirst(wasteType),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                              color: Color(0xFF1A1A2E),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Status badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _statusColor(log.status)
+                                  .withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              _statusLabel(log.status),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: _statusColor(log.status),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Row(
@@ -582,20 +679,14 @@ class _ActivityLogCard extends StatelessWidget {
           ),
 
           // Transaction hash if available
-          if (log.txHash != null) ...[
-            Divider(
-              height: 1,
-              color: Colors.grey.shade100,
-            ),
+          if (log.txHash != null && log.txHash!.length >= 16) ...[
+            Divider(height: 1, color: Colors.grey.shade100),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.link,
-                    size: 14,
-                    color: Colors.blue.shade400,
-                  ),
+                  Icon(Icons.link, size: 14, color: Colors.blue.shade400),
                   const SizedBox(width: 4),
                   Text(
                     'On-chain: ${log.txHash!.substring(0, 10)}...${log.txHash!.substring(log.txHash!.length - 6)}',

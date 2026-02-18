@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:waste_management/Pages/About_page.dart';
 import 'package:waste_management/Pages/Faq_Page.dart';
@@ -163,6 +164,14 @@ class _ProfilePageState extends State<ProfilePage> {
 
               const SizedBox(height: 12),
 
+              // ---------------- WALLET CARD ----------------
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: _WalletCard(authService: _authService),
+              ),
+
+              const SizedBox(height: 12),
+
               // ---------------- MENU ITEMS ----------------
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -285,6 +294,218 @@ class _ProfileItem extends StatelessWidget {
             thickness: 0.6,
             color: Colors.grey.shade400,
           ),
+      ],
+    );
+  }
+}
+
+// ============================================================================
+// WALLET CARD
+// ============================================================================
+
+class _WalletCard extends StatefulWidget {
+  final AuthService authService;
+
+  const _WalletCard({required this.authService});
+
+  @override
+  State<_WalletCard> createState() => _WalletCardState();
+}
+
+class _WalletCardState extends State<_WalletCard> {
+  bool _isRetrying = false;
+  String? _error;
+
+  String get _walletAddress =>
+      widget.authService.currentUser?.walletAddress ?? '';
+
+  bool get _hasWallet => _walletAddress.isNotEmpty;
+
+  String _shorten(String address) {
+    if (address.length < 12) return address;
+    return '${address.substring(0, 6)}...${address.substring(address.length - 4)}';
+  }
+
+  Future<void> _retryWalletSetup() async {
+    setState(() {
+      _isRetrying = true;
+      _error = null;
+    });
+
+    final address = await widget.authService.ensureWallet();
+
+    if (!mounted) return;
+
+    if (address != null && address.isNotEmpty) {
+      setState(() {
+        _isRetrying = false;
+      });
+    } else {
+      setState(() {
+        _isRetrying = false;
+        _error = 'Could not create wallet. Please try again.';
+      });
+    }
+  }
+
+  void _copyAddress() {
+    if (_hasWallet) {
+      Clipboard.setData(ClipboardData(text: _walletAddress));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Wallet address copied'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: _hasWallet ? _buildWalletInfo() : _buildNoWallet(),
+    );
+  }
+
+  Widget _buildWalletInfo() {
+    return Row(
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: const Color(0xFFECFDF5),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(
+            Icons.account_balance_wallet_rounded,
+            color: Color(0xFF16A34A),
+            size: 22,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Wallet Address',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _shorten(_walletAddress),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          onPressed: _copyAddress,
+          icon: const Icon(Icons.copy_rounded, size: 20),
+          tooltip: 'Copy address',
+          color: Colors.grey.shade600,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNoWallet() {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.account_balance_wallet_outlined,
+                color: Color(0xFFDC2626),
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Wallet Not Set Up',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'A wallet is needed to earn rewards.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _error!,
+            style: const TextStyle(fontSize: 12, color: Colors.red),
+          ),
+        ],
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 40,
+          child: ElevatedButton.icon(
+            onPressed: _isRetrying ? null : _retryWalletSetup,
+            icon: _isRetrying
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh, size: 18),
+            label: Text(_isRetrying ? 'Setting up...' : 'Retry Wallet Setup'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1F2937),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
