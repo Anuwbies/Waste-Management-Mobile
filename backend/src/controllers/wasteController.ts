@@ -8,6 +8,7 @@ import RewardHistory from "../models/RewardHistory";
 import { calculateRewardPoints } from "../services/rewardService";
 import { classifyImage, AiClassificationResult } from "../services/aiService";
 import { CNN_CONFIDENCE_THRESHOLD } from "../config/env";
+import { computeImageHash } from "../services/blockchainServiceV2";
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, "..", "..", "uploads");
@@ -59,6 +60,46 @@ export const uploadWasteImage = async (
     // Get file path
     const imageUrl = `/uploads/${req.file.filename}`;
 
+    // ── Compute image hash & duplicate check ─────────────────────────
+    const imageBuffer = fs.readFileSync(req.file.path);
+    const imageHash = computeImageHash(imageBuffer);
+
+    // If this user has already uploaded the exact same image
+    // and it was approved, deny the duplicate.
+    const duplicateClassification = await WasteClassification.findOne({
+      userId,
+      imageHash,
+      status: "approved",
+    });
+
+    if (duplicateClassification) {
+      // Clean up the newly-uploaded file since we are rejecting it
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch {
+        /* ignore cleanup errors */
+      }
+
+      console.log(
+        `[wasteController] DUPLICATE IMAGE: userId=${userId} imageHash=${imageHash} ` +
+          `existing classificationId=${duplicateClassification._id}`
+      );
+
+      return res.status(409).json({
+        message:
+          "This image has already been submitted. Please take a new photo.",
+        status: "denied",
+        reason: "Duplicate image",
+        existingClassification: {
+          id: duplicateClassification._id,
+          wasteType: duplicateClassification.wasteType,
+          confidence: duplicateClassification.confidence,
+          rewardPoints: duplicateClassification.rewardPoints,
+          createdAt: duplicateClassification.createdAt,
+        },
+      });
+    }
+
     // Classify the waste via AI inference service
     let classification: AiClassificationResult;
     try {
@@ -86,6 +127,7 @@ export const uploadWasteImage = async (
     const wasteRecord = await WasteClassification.create({
       userId,
       imageUrl,
+      imageHash,
       wasteType,
       confidence,
       rewardPoints,

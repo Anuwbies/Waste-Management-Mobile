@@ -211,8 +211,15 @@ export const generateDeterministicAddress = (userId: string): string => {
 // =============================================================================
 
 /**
- * Generate a unique event hash for a recycling action
- * This hash is used to prevent double-claiming on-chain
+ * Generate a unique event hash for a recycling action.
+ *
+ * When an imageHash is available, the hash is **content-deterministic**:
+ *   keccak256(userId + wasteType + imageHash)
+ * This means re-submitting the exact same image will always produce the same
+ * eventHash regardless of when it is submitted — blocking duplicate claims.
+ *
+ * When no imageHash is available, we fall back to a timestamp-based hash
+ * (truncated to the minute) for backward compatibility.
  */
 export const generateEventHash = (
   userId: string,
@@ -224,19 +231,21 @@ export const generateEventHash = (
   const wasteTypeNum =
     typeof wasteType === "string" ? mapWasteTypeToEnum(wasteType) : wasteType;
 
-  // Truncate timestamp to minute for some tolerance
+  if (imageHash) {
+    // Content-deterministic: same user + same image → same hash always
+    const data = solidityPacked(
+      ["string", "uint8", "string"],
+      [userId, wasteTypeNum, imageHash]
+    );
+    return keccak256(data);
+  }
+
+  // Legacy fallback — timestamp-based (truncated to minute)
   const truncatedTimestamp = Math.floor(timestamp / 60000) * 60000;
-
-  const data = imageHash
-    ? solidityPacked(
-        ["string", "uint8", "uint256", "string"],
-        [userId, wasteTypeNum, truncatedTimestamp, imageHash]
-      )
-    : solidityPacked(
-        ["string", "uint8", "uint256"],
-        [userId, wasteTypeNum, truncatedTimestamp]
-      );
-
+  const data = solidityPacked(
+    ["string", "uint8", "uint256"],
+    [userId, wasteTypeNum, truncatedTimestamp]
+  );
   return keccak256(data);
 };
 

@@ -104,6 +104,38 @@ export const recycleWaste = async (
       imageHash = computeImageHash(imageBuffer);
     }
 
+    // ── Duplicate image anti-cheat ──────────────────────────────────
+    // If the same user has already submitted the exact same image
+    // (confirmed or pending), deny the reward immediately.
+    if (imageHash) {
+      const duplicateEvent = await RecyclingEvent.findOne({
+        userId,
+        imageHash,
+        status: { $in: ["confirmed", "pending"] },
+      });
+
+      if (duplicateEvent) {
+        console.log(
+          `[recycleController] DUPLICATE IMAGE: userId=${userId} imageHash=${imageHash} ` +
+            `existing eventId=${duplicateEvent._id}`
+        );
+        return res.status(409).json({
+          message:
+            "This image has already been submitted for rewards. Please use a new photo.",
+          status: "denied",
+          reason: "Duplicate image",
+          rewardPoints: 0,
+          existingEvent: {
+            id: duplicateEvent._id,
+            wasteType: duplicateEvent.wasteType,
+            rewardPoints: duplicateEvent.rewardPoints,
+            status: duplicateEvent.status,
+            createdAt: duplicateEvent.createdAt,
+          },
+        });
+      }
+    }
+
     // Generate unique event hash for idempotency
     const eventHash = generateEventHash(
       userId!,

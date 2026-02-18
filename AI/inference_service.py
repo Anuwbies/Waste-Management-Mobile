@@ -16,6 +16,7 @@ import sys
 import json
 import argparse
 import logging
+import hashlib
 from io import BytesIO
 from typing import List
 
@@ -239,6 +240,129 @@ async def classify_endpoint(image: UploadFile = File(...)):
         result["rawLabel"],
     )
     return JSONResponse(content=result)
+
+
+# =========================================================================== #
+# Perceptual Hashing (anti-cheat: near-duplicate detection)
+# =========================================================================== #
+
+PHASH_SIZE = 8  # produces a 64-bit hash
+
+
+def _compute_phash(image: Image.Image, hash_size: int = PHASH_SIZE) -> str:
+    """
+    Compute a perceptual hash (pHash) using DCT.
+
+    Steps:
+      1. Convert to greyscale and resize to (hash_size*4 x hash_size*4).
+      2. Compute 2-D DCT.
+      3. Keep the top-left hash_size×hash_size low-frequency block.
+      4. Median-threshold to produce a binary string → hex.
+
+    Two images with a small Hamming distance between their pHash values
+    are visually very similar, even after crops, compression, or rescaling.
+    """
+    grey = image.convert("L").resize(
+        (hash_size * 4, hash_size * 4), Image.Resampling.LANCZOS
+    )
+    pixels = np.array(grey, dtype=np.float64)
+
+    # 2-D DCT via scipy if available, else manual rows+cols DCT
+    try:
+        from scipy.fftpack import dct
+
+        dct_full = dct(dct(pixels, axis=0, norm="ortho"), axis=1, norm="ortho")
+    except ImportError:
+        # Fallback: use numpy FFT-based approximation
+        dct_full = np.real(np.fft.fft2(pixels))
+
+    low_freq = dct_full[:hash_size, :hash_size]
+    median = np.median(low_freq)
+    bits = (low_freq > median).flatten()
+    # Pack bits into hex string
+    hash_int = 0
+    for bit in bits:
+        hash_int = (hash_int << 1) | int(bit)
+    return format(hash_int, f"0{hash_size * hash_size // 4}x")
+
+
+def _compute_sha256(raw_bytes: bytes) -> str:
+    """Compute SHA-256 hex digest of raw image bytes."""
+    return hashlib.sha256(raw_bytes).hexdigest()
+
+
+def hamming_distance(h1: str, h2: str) -> int:
+    """Hamming distance between two hex-encoded hashes of equal length."""
+    if len(h1) != len(h2):
+        raise ValueError("Hashes must be the same length")
+    val = int(h1, 16) ^ int(h2, 16)
+    return bin(val).count("1")
+
+
+@app.post("/phash")
+async def phash_endpoint(image: UploadFile = File(...)):
+    """
+    Compute perceptual hash + SHA-256 of an uploaded image.
+
+    Returns:
+        phash      – hex perceptual hash (64-bit by default)
+        sha256     – hex SHA-256 of raw bytes
+        hashSize   – the pHash grid size used
+    """
+    content_type = image.content_type or ""
+    allowed = {"image/jpeg", "image/png", "image/webp", "image/heic"}
+    if content_type not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type: {content_type}. Allowed: {', '.join(sorted(allowed))}",
+        )
+
+    try:
+        raw_bytes = await image.read()
+        pil_image = Image.open(BytesIO(raw_bytes)).convert("RGB")
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot read image: {exc}")
+
+    phash_hex = _compute_phash(pil_image)
+    sha256_hex = _compute_sha256(raw_bytes)
+
+    logger.info("pHash=%s  sha256=%s…", phash_hex, sha256_hex[:16])
+    return JSONResponse(
+        content={
+            "phash": phash_hex,
+            "sha256": sha256_hex,
+            "hashSize": PHASH_SIZE,
+        }
+    )
+
+
+@app.post("/phash/compare")
+async def phash_compare_endpoint(hash1: str, hash2: str):
+    """
+    Compare two perceptual hashes and return the Hamming distance.
+
+    Body (JSON): { "hash1": "<hex>", "hash2": "<hex>" }
+    Returns:
+        distance  – integer Hamming distance
+        similar   – bool (distance <= 10 is typically "same image")
+    """
+    if not hash1 or not hash2:
+        raise HTTPException(
+            status_code=400, detail="Both hash1 and hash2 are required"
+        )
+    try:
+        dist = hamming_distance(hash1, hash2)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return JSONResponse(
+        content={
+            "hash1": hash1,
+            "hash2": hash2,
+            "distance": dist,
+            "similar": dist <= 10,
+        }
+    )
 
 
 # =========================================================================== #

@@ -102,6 +102,10 @@ const recyclingEventSchema = new Schema<IRecyclingEvent>(
 recyclingEventSchema.index({ userId: 1, createdAt: -1 });
 recyclingEventSchema.index({ status: 1, createdAt: 1 }); // For retry queue
 recyclingEventSchema.index({ txHash: 1 }, { sparse: true });
+recyclingEventSchema.index(
+  { userId: 1, imageHash: 1 },
+  { sparse: true } // only index docs that have imageHash — used for duplicate detection
+);
 
 const RecyclingEvent = model<IRecyclingEvent>(
   "RecyclingEvent",
