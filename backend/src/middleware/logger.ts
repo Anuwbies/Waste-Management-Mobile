@@ -125,6 +125,54 @@ const truncateId = (id: string | undefined): string => {
 };
 
 // =============================================================================
+// Sensitive Data Redaction
+// =============================================================================
+
+/**
+ * Keys whose values must NEVER appear in logs (case-insensitive check).
+ */
+const SENSITIVE_KEYS = new Set([
+  "password",
+  "newpassword",
+  "idtoken",
+  "resettoken",
+  "accesstoken",
+  "token",
+  "otp",
+  "authorization",
+  "cookie",
+  "secret",
+  "privatekey",
+  "mnemonic",
+]);
+
+/**
+ * Recursively redact sensitive fields from an object before logging.
+ * Returns a shallow-ish copy – safe for read-only logging.
+ */
+const redactObject = (obj: unknown, depth = 0): unknown => {
+  if (depth > 6 || obj === null || obj === undefined) return obj;
+
+  if (Array.isArray(obj)) {
+    return obj.map((item) => redactObject(item, depth + 1));
+  }
+
+  if (typeof obj === "object") {
+    const redacted: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+      if (SENSITIVE_KEYS.has(key.toLowerCase())) {
+        redacted[key] = "[REDACTED]";
+      } else {
+        redacted[key] = redactObject(value, depth + 1);
+      }
+    }
+    return redacted;
+  }
+
+  return obj;
+};
+
+// =============================================================================
 // Response Body Capture
 // =============================================================================
 
@@ -204,8 +252,8 @@ export const loggerMiddleware = (
       // IP address
       details.push(`${colors.gray}IP: ${ip}${colors.reset}`);
 
-      // Extract txHash from blockchain responses
-      const body = loggableRes._body as Record<string, unknown> | undefined;
+      // Extract txHash from blockchain responses (redact sensitive fields)
+      const body = redactObject(loggableRes._body) as Record<string, unknown> | undefined;
       if (body && typeof body === "object") {
         // Check for txHash in various locations
         const txHash =
@@ -235,12 +283,12 @@ export const loggerMiddleware = (
 
     // Log stack trace for 500 errors in development
     if (status >= 500 && isDevelopment) {
-      const body = loggableRes._body as Record<string, unknown> | undefined;
-      if (body?.stack) {
+      const rawBody = loggableRes._body as Record<string, unknown> | undefined;
+      if (rawBody?.stack) {
         // eslint-disable-next-line no-console
         console.error(`${colors.red}Stack trace:${colors.reset}`);
         // eslint-disable-next-line no-console
-        console.error(colors.dim + body.stack + colors.reset);
+        console.error(colors.dim + rawBody.stack + colors.reset);
       }
     }
   });

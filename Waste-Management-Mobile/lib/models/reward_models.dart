@@ -31,12 +31,36 @@ class ChainStats {
   };
 }
 
-/// Reward balance response
-/// Backend returns: { balance, chainStats: { balance, totalEarned, totalRedeemed, recordCount }, walletAddress }
+/// Reward balance response.
+///
+/// Backend now returns the **on-chain balance** as the top-level `balance`
+/// field.  `chainStats` is kept for backward-compat.  The `source` field
+/// indicates whether the value came from `"chain"` or `"cache"` (Mongo
+/// fallback when the chain is unreachable).
 class RewardBalance {
+  /// Authoritative balance (from chain when available).
   final int balance;
+
+  /// Full on-chain stats (mirrors top-level fields for backward-compat).
   final ChainStats chainStats;
+
+  /// Wallet address (null until first recycling event).
   final String? walletAddress;
+
+  /// Whether the balance came from chain or Mongo cache.
+  final String source;
+
+  /// Total points ever earned (on-chain).
+  final int totalEarned;
+
+  /// Total points ever redeemed (on-chain).
+  final int totalRedeemed;
+
+  /// Total recycling records (on-chain).
+  final int recordCount;
+
+  /// Optional integrity warning when Mongo cache differs from chain.
+  final String? integrityWarning;
 
   /// Backward-compat shorthand for chainStats.balance
   int get chainRewards => chainStats.balance;
@@ -45,17 +69,32 @@ class RewardBalance {
     this.balance = 0,
     ChainStats? chainStats,
     this.walletAddress,
+    this.source = 'cache',
+    this.totalEarned = 0,
+    this.totalRedeemed = 0,
+    this.recordCount = 0,
+    this.integrityWarning,
   }) : chainStats = chainStats ?? ChainStats();
 
   factory RewardBalance.fromJson(Map<String, dynamic> json) {
+    final cs = json['chainStats'] is Map<String, dynamic>
+        ? ChainStats.fromJson(json['chainStats'] as Map<String, dynamic>)
+        : ChainStats(
+            balance: (json['balance'] as num?)?.toInt() ?? 0,
+            totalEarned: (json['totalEarned'] as num?)?.toInt() ?? 0,
+            totalRedeemed: (json['totalRedeemed'] as num?)?.toInt() ?? 0,
+            recordCount: (json['recordCount'] as num?)?.toInt() ?? 0,
+          );
+
     return RewardBalance(
       balance: (json['balance'] as num?)?.toInt() ?? 0,
-      chainStats: json['chainStats'] is Map<String, dynamic>
-          ? ChainStats.fromJson(json['chainStats'] as Map<String, dynamic>)
-          : ChainStats(
-              balance: (json['chainRewards'] as num?)?.toInt() ?? 0,
-            ),
+      chainStats: cs,
       walletAddress: json['walletAddress'] as String?,
+      source: json['source'] as String? ?? 'cache',
+      totalEarned: (json['totalEarned'] as num?)?.toInt() ?? cs.totalEarned,
+      totalRedeemed: (json['totalRedeemed'] as num?)?.toInt() ?? cs.totalRedeemed,
+      recordCount: (json['recordCount'] as num?)?.toInt() ?? cs.recordCount,
+      integrityWarning: json['integrityWarning'] as String?,
     );
   }
 
@@ -63,6 +102,10 @@ class RewardBalance {
     'balance': balance,
     'chainStats': chainStats.toJson(),
     'walletAddress': walletAddress,
+    'source': source,
+    'totalEarned': totalEarned,
+    'totalRedeemed': totalRedeemed,
+    'recordCount': recordCount,
   };
 }
 
@@ -218,13 +261,32 @@ class RewardHistoryResponse {
   }
 }
 
-/// Reward statistics
+/// Reward statistics (chain-authoritative totals + Mongo breakdowns)
 class RewardStats {
+  /// Authoritative balance from chain.
   final int totalRewards;
+
+  /// Total ever earned (on-chain).
+  final int totalEarned;
+
+  /// Total ever redeemed (on-chain).
+  final int totalRedeemed;
+
+  /// Number of on-chain recycling records.
+  final int recordCount;
+
+  /// `"chain"` or `"cache"`.
+  final String source;
+
+  /// Per-type breakdown from off-chain history.
   final Map<String, TypeStats> statsByType;
 
   RewardStats({
     this.totalRewards = 0,
+    this.totalEarned = 0,
+    this.totalRedeemed = 0,
+    this.recordCount = 0,
+    this.source = 'cache',
     this.statsByType = const {},
   });
 
@@ -241,6 +303,10 @@ class RewardStats {
 
     return RewardStats(
       totalRewards: (json['totalRewards'] as num?)?.toInt() ?? 0,
+      totalEarned: (json['totalEarned'] as num?)?.toInt() ?? 0,
+      totalRedeemed: (json['totalRedeemed'] as num?)?.toInt() ?? 0,
+      recordCount: (json['recordCount'] as num?)?.toInt() ?? 0,
+      source: json['source'] as String? ?? 'cache',
       statsByType: statsMap,
     );
   }

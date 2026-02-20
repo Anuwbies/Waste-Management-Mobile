@@ -7,13 +7,79 @@ import CustodialWallet from "../models/CustodialWallet";
 import {
   getBalanceOnChain,
   getUserStatsOnChain,
+  getGlobalStatsOnChain,
   redeemOnChain,
   generateRedemptionId,
   isBlockchainConfigured,
   getCurrentChainId,
 } from "../services/blockchainServiceV2";
 
+// ---------------------------------------------------------------------------
+// Helper: read the authoritative on-chain balance for a user.
+// Falls back to the (deprecated) Mongo cache when the chain is unreachable.
+// ---------------------------------------------------------------------------
+interface AuthoritativeBalance {
+  /** The balance the rest of the endpoint should treat as canonical. */
+  balance: number;
+  totalEarned: number;
+  totalRedeemed: number;
+  recordCount: number;
+  source: "chain" | "cache";
+  walletAddress: string | null;
+  integrityWarning?: string;
+}
+
+async function getAuthoritativeBalance(
+  userId: string,
+  mongoBalance: number,
+): Promise<AuthoritativeBalance> {
+  const wallet = await CustodialWallet.findOne({ userId });
+  const walletAddress = wallet?.address ?? null;
+
+  if (walletAddress && (await isBlockchainConfigured())) {
+    try {
+      const stats = await getUserStatsOnChain(walletAddress);
+      const chainBalance = Number(stats.balance);
+
+      // Integrity check: warn if Mongo cache drifted
+      let integrityWarning: string | undefined;
+      if (mongoBalance !== chainBalance) {
+        console.warn(
+          `[rewards] INTEGRITY DRIFT userId=${userId} ` +
+            `mongo=${mongoBalance} chain=${chainBalance} — preferring chain`,
+        );
+        integrityWarning =
+          `Off-chain cache (${mongoBalance}) differs from on-chain balance (${chainBalance}). Chain is authoritative.`;
+      }
+
+      return {
+        balance: chainBalance,
+        totalEarned: Number(stats.totalEarned),
+        totalRedeemed: Number(stats.totalRedeemed),
+        recordCount: Number(stats.recordCount),
+        source: "chain",
+        walletAddress,
+        integrityWarning,
+      };
+    } catch (err) {
+      console.error("[rewards] Chain read failed, falling back to Mongo cache:", err);
+    }
+  }
+
+  // Fallback — no wallet yet or chain unreachable
+  return {
+    balance: mongoBalance,
+    totalEarned: mongoBalance, // best-effort approximation
+    totalRedeemed: 0,
+    recordCount: 0,
+    source: "cache",
+    walletAddress,
+  };
+}
+
 // GET /rewards/balance - Get user's reward balance
+// Blockchain is the SOURCE OF TRUTH.  Mongo `user.totalRewards` is only a
+// stale cache kept for backward-compat / offline resilience.
 export const getRewardBalance = async (
   req: AuthRequest,
   res: Response,
@@ -27,29 +93,24 @@ export const getRewardBalance = async (
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Get custodial wallet
-    const wallet = await CustodialWallet.findOne({ userId });
-
-    // Get on-chain stats if wallet exists and blockchain is configured
-    let chainStats = null;
-    if (wallet && (await isBlockchainConfigured())) {
-      try {
-        const stats = await getUserStatsOnChain(wallet.address);
-        chainStats = {
-          balance: Number(stats.balance),
-          totalEarned: Number(stats.totalEarned),
-          totalRedeemed: Number(stats.totalRedeemed),
-          recordCount: Number(stats.recordCount),
-        };
-      } catch (err) {
-        console.error("Failed to get chain stats:", err);
-      }
-    }
+    const auth = await getAuthoritativeBalance(userId!, user.totalRewards);
 
     return res.status(200).json({
-      balance: user.totalRewards,
-      chainStats,
-      walletAddress: wallet?.address || null,
+      // Primary — always from chain when available
+      balance: auth.balance,
+      totalEarned: auth.totalEarned,
+      totalRedeemed: auth.totalRedeemed,
+      recordCount: auth.recordCount,
+      walletAddress: auth.walletAddress,
+      source: auth.source,
+      // Deprecated — kept for old clients
+      chainStats: {
+        balance: auth.balance,
+        totalEarned: auth.totalEarned,
+        totalRedeemed: auth.totalRedeemed,
+        recordCount: auth.recordCount,
+      },
+      ...(auth.integrityWarning ? { integrityWarning: auth.integrityWarning } : {}),
     });
   } catch (error) {
     return next(error);
@@ -98,6 +159,7 @@ export const getRewardHistory = async (
 };
 
 // GET /rewards/stats - Get user's reward statistics
+// Chain is authoritative for totalRewards; Mongo aggregation for breakdown.
 export const getRewardStats = async (
   req: AuthRequest,
   res: Response,
@@ -111,6 +173,11 @@ export const getRewardStats = async (
       return res.status(404).json({ message: "User not found" });
     }
 
+    // On-chain authoritative balance
+    const auth = await getAuthoritativeBalance(userId!, user.totalRewards);
+
+    // Off-chain breakdown (RewardHistory is append-only and trustworthy for
+    // per-type breakdowns, but the *total* comes from chain).
     const stats = await RewardHistory.aggregate([
       { $match: { userId: user._id } },
       {
@@ -133,9 +200,28 @@ export const getRewardStats = async (
       {} as Record<string, { totalPoints: number; count: number }>
     );
 
+    // Global on-chain stats
+    let globalStats = null;
+    if (await isBlockchainConfigured()) {
+      try {
+        const g = await getGlobalStatsOnChain();
+        globalStats = {
+          totalEvents: Number(g.totalEvents),
+          totalMinted: Number(g.totalMinted),
+          totalBurned: Number(g.totalBurned),
+        };
+      } catch { /* non-critical */ }
+    }
+
     return res.status(200).json({
-      totalRewards: user.totalRewards,
+      totalRewards: auth.balance,
+      totalEarned: auth.totalEarned,
+      totalRedeemed: auth.totalRedeemed,
+      recordCount: auth.recordCount,
+      source: auth.source,
       statsByType,
+      globalStats,
+      ...(auth.integrityWarning ? { integrityWarning: auth.integrityWarning } : {}),
     });
   } catch (error) {
     return next(error);
@@ -188,14 +274,18 @@ export const getRedemptionOptions = async (
       return res.status(404).json({ message: "User not found" });
     }
 
+    // Use on-chain balance for affordability check
+    const auth = await getAuthoritativeBalance(userId!, user.totalRewards);
+
     const options = Object.entries(REDEMPTION_OPTIONS).map(([key, option]) => ({
       id: key,
       ...option,
-      canAfford: user.totalRewards >= option.pointsCost,
+      canAfford: auth.balance >= option.pointsCost,
     }));
 
     return res.status(200).json({
-      currentBalance: user.totalRewards,
+      currentBalance: auth.balance,
+      source: auth.source,
       options,
     });
   } catch (error) {
@@ -233,12 +323,14 @@ export const redeemRewards = async (
       return res.status(400).json({ message: "Invalid redemption option" });
     }
 
-    // Check user has enough points
-    if (user.totalRewards < pointsToRedeem) {
+    // Check user has enough points — chain is authoritative
+    const auth = await getAuthoritativeBalance(userId!, user.totalRewards);
+    if (auth.balance < pointsToRedeem) {
       return res.status(400).json({
         message: "Insufficient points",
         required: pointsToRedeem,
-        available: user.totalRewards,
+        available: auth.balance,
+        source: auth.source,
       });
     }
 
@@ -266,20 +358,8 @@ export const redeemRewards = async (
       description: option?.name || `Redeemed ${pointsToRedeem} points`,
     });
 
-    // Deduct points immediately (off-chain, for UX)
-    user.totalRewards -= pointsToRedeem;
-    await user.save();
-
-    // Record in reward history
-    await RewardHistory.create({
-      userId,
-      type: "redemption",
-      points: -pointsToRedeem,
-      description: `Redeemed: ${option?.name || rewardType}`,
-      referenceId: rewardTx._id,
-    });
-
-    // Attempt on-chain redemption
+    // Attempt on-chain redemption FIRST — chain is the authority.
+    // Only update Mongo cache after the chain call succeeds.
     let txHash: string | undefined;
     const blockchainConfigured = await isBlockchainConfigured();
 
@@ -299,11 +379,31 @@ export const redeemRewards = async (
       } else {
         rewardTx.status = "failed";
         rewardTx.errorMessage = result.error;
-        // Note: Points already deducted off-chain
-        // Could add reconciliation logic here
+        await rewardTx.save();
+
+        return res.status(500).json({
+          message: "On-chain redemption failed. Points were NOT deducted.",
+          error: result.error,
+        });
       }
       await rewardTx.save();
     }
+
+    // Update Mongo cache (best-effort, chain is truth)
+    user.totalRewards = Math.max(0, user.totalRewards - pointsToRedeem);
+    await user.save();
+
+    // Record in reward history
+    await RewardHistory.create({
+      userId,
+      type: "redemption",
+      points: -pointsToRedeem,
+      description: `Redeemed: ${option?.name || rewardType}`,
+      referenceId: rewardTx._id,
+    });
+
+    // Re-read authoritative balance after redemption
+    const postAuth = await getAuthoritativeBalance(userId!, user.totalRewards);
 
     return res.status(200).json({
       message: "Redemption successful",
@@ -316,7 +416,8 @@ export const redeemRewards = async (
         txHash,
         status: rewardTx.status,
       },
-      newBalance: user.totalRewards,
+      newBalance: postAuth.balance,
+      source: postAuth.source,
     });
   } catch (error) {
     return next(error);

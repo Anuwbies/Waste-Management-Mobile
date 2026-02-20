@@ -85,7 +85,7 @@ class CnnClassification {
   /// Potential reward points
   final int potentialPoints;
 
-  /// Backend classification status ("approved" | "denied")
+  /// Backend classification status ("pending" | "denied" | "approved")
   final String? status;
 
   /// Raw model label before canonical mapping

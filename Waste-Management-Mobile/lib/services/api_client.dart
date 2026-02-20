@@ -26,7 +26,7 @@ class ApiClient {
   ApiClient._internal();
 
   // Base URL - change this for production
-  static const String _baseUrl = 'http://10.0.2.2:5000'; // Android emulator
+  static const String _baseUrl = 'http://192.168.1.18:5000'; // Android emulator
   // static const String _baseUrl = 'http://localhost:5000'; // iOS simulator
   // static const String _baseUrl = 'https://your-production-api.com'; // Production
 

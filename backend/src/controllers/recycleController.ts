@@ -238,19 +238,6 @@ export const recycleWaste = async (
       rewardPoints,
     });
 
-    // Update user rewards immediately (off-chain, for UX)
-    user.totalRewards += rewardPoints;
-    await user.save();
-
-    // Record in reward history
-    await RewardHistory.create({
-      userId,
-      type: "recycling",
-      points: rewardPoints,
-      description: `Recycled ${qty} ${wasteType} item(s)`,
-      referenceId: recyclingLog._id,
-    });
-
     // Create reward transaction (pending on-chain confirmation)
     const rewardTx = await RewardTransaction.create({
       userId,
@@ -262,8 +249,12 @@ export const recycleWaste = async (
       description: `Earned ${rewardPoints} points for recycling ${wasteType}`,
     });
 
-    // Attempt on-chain recording (async, non-blocking for UX)
+    // ── On-chain recording — chain is the SOURCE OF TRUTH ────────────
+    // We do NOT increment Mongo user.totalRewards before the chain call
+    // succeeds.  This prevents Mongo-tampering from inflating balances.
     const blockchainConfigured = await isBlockchainConfigured();
+    let chainSuccess = false;
+
     if (blockchainConfigured) {
       // Check if already used on-chain (extra safety)
       const usedOnChain = await isEventUsedOnChain(eventHash);
@@ -286,6 +277,7 @@ export const recycleWaste = async (
       );
 
       if (result.success) {
+        chainSuccess = true;
         recyclingEvent.status = "confirmed";
         recyclingEvent.txHash = result.txHash;
         recyclingEvent.confirmedAt = new Date();
@@ -298,6 +290,19 @@ export const recycleWaste = async (
         rewardTx.txHash = result.txHash;
         rewardTx.confirmedAt = new Date();
         await rewardTx.save();
+
+        // Update Mongo cache ONLY after chain success (best-effort cache)
+        user.totalRewards += rewardPoints;
+        await user.save();
+
+        // Record in reward history
+        await RewardHistory.create({
+          userId,
+          type: "recycling",
+          points: rewardPoints,
+          description: `Recycled ${qty} ${wasteType} item(s)`,
+          referenceId: recyclingLog._id,
+        });
       } else {
         recyclingEvent.status = "failed";
         recyclingEvent.errorMessage = result.error;
@@ -308,18 +313,37 @@ export const recycleWaste = async (
         rewardTx.errorMessage = result.error;
         await rewardTx.save();
 
-        // Note: User still gets off-chain rewards even if on-chain fails
-        // A background job can retry failed transactions
+        // DO NOT update Mongo balance — chain failed, no reward granted
+        console.error(
+          `[recycleController] ON-CHAIN FAILED: ${result.error} (${wasteType}, ${rewardPoints} pts)`
+        );
       }
+    } else {
+      // Blockchain not configured — skip chain, still grant off-chain
+      // (dev / fallback mode)
+      chainSuccess = true;
+      user.totalRewards += rewardPoints;
+      await user.save();
+
+      await RewardHistory.create({
+        userId,
+        type: "recycling",
+        points: rewardPoints,
+        description: `Recycled ${qty} ${wasteType} item(s)`,
+        referenceId: recyclingLog._id,
+      });
     }
 
     console.log(
-      `[recycleController] APPROVED: confidence=${confidence?.toFixed(3)} wasteType=${wasteType} points=${rewardPoints}`
+      `[recycleController] ${chainSuccess ? "APPROVED" : "CHAIN_FAILED"}: ` +
+        `confidence=${confidence?.toFixed(3)} wasteType=${wasteType} points=${rewardPoints}`
     );
 
-    return res.status(200).json({
-      message: "Recycling activity recorded",
-      status: "approved",
+    return res.status(chainSuccess ? 200 : 502).json({
+      message: chainSuccess
+        ? "Recycling activity recorded"
+        : "On-chain recording failed. Reward was NOT granted. Please try again.",
+      status: chainSuccess ? "approved" : "failed",
       confidence,
       log: {
         id: recyclingLog._id,
@@ -327,7 +351,7 @@ export const recycleWaste = async (
         eventHash,
         wasteType,
         quantity: qty,
-        rewardPoints,
+        rewardPoints: chainSuccess ? rewardPoints : 0,
         txHash: recyclingEvent.txHash,
         status: recyclingEvent.status,
         chainId: blockchainConfigured ? chainId : null,

@@ -227,11 +227,15 @@ class _LlmSuggestionPageState extends State<LlmSuggestionPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _session.classification!.label.toUpperCase(),
-                style: const TextStyle(
+                _meetsRewardThreshold
+                    ? _session.classification!.label.toUpperCase()
+                    : 'UNRECOGNIZED ITEM',
+                style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF333333),
+                  color: _meetsRewardThreshold
+                      ? const Color(0xFF333333)
+                      : Colors.grey[600]!,
                 ),
               ),
               const SizedBox(height: 4),
@@ -243,28 +247,52 @@ class _LlmSuggestionPageState extends State<LlmSuggestionPage> {
                 ),
               ),
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.stars, color: Colors.amber, size: 16),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${_session.classification!.potentialPoints} pts',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.green,
+              if (_meetsRewardThreshold)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.stars, color: Colors.amber, size: 16),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Potential ${_session.classification!.potentialPoints} pts',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.block, color: Colors.grey, size: 16),
+                      SizedBox(width: 4),
+                      Text(
+                        'Rewards unavailable',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
         ),

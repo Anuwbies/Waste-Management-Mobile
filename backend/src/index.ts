@@ -1,8 +1,12 @@
 import "./config/env";
 import cors from "cors";
-import express, { NextFunction, Request, Response } from "express";
-import mongoose from "mongoose";
-import cookieParser from "cookie-parser";
+import express, { Request, Response } from "express";
+
+import { createServer } from 'http';
+import { connectDatabase } from './config/database';
+import { logger } from './config/logger';
+import { env } from './config/env';
+
 import path from "path";
 import recycleRoutes from "./routes/recycleRoutes";
 import userRoutes from "./routes/userRoutes";
@@ -13,14 +17,48 @@ import walletRoutes from "./routes/walletRoutes";
 import { getBlockchainHealth } from "./services/blockchainServiceV2";
 import { getAiHealth } from "./services/aiService";
 import { loggerMiddleware, logStartup } from "./middleware/logger";
+import {
+  helmetMiddleware,
+  corsOptions,
+  requestIdMiddleware,
+} from "./middleware/security";
+import mongoSanitize from "express-mongo-sanitize";
+import { globalLimiter } from "./middleware/rateLimit";
+import { globalErrorHandler } from "./middleware/errorHandler";
+
+// Load environment variables
+logger.info('Loading environment configuration...');
+logger.debug('Environment config loaded:', env.getConfig(false));
 
 const app = express();
+const server = createServer(app);
+const PORT = env.server.port;
 
-app.use(cors());
-app.use(express.json());
-// app.use(cookieParser());
+// ── Trust proxy (required behind Render / Railway / Nginx for correct req.ip)
+if (process.env.DEPLOYED_BEHIND_PROXY === "true" || process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
 
-// Request/Response logging middleware (must be before routes)
+// ── Security headers ─────────────────────────────────────────────────────────
+app.use(helmetMiddleware);
+
+// ── CORS with allowlist ──────────────────────────────────────────────────────
+app.use(cors(corsOptions));
+
+// ── Body parsing with size limits ────────────────────────────────────────────
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: false, limit: "2mb" }));
+
+// ── NoSQL injection guard ────────────────────────────────────────────────────
+app.use(mongoSanitize());
+
+// ── Request-ID correlation ───────────────────────────────────────────────────
+app.use(requestIdMiddleware);
+
+// ── Global rate limit (DoS safety net) ───────────────────────────────────────
+app.use(globalLimiter);
+
+// ── Request/Response logging (must be before routes) ─────────────────────────
 app.use(loggerMiddleware);
 
 // Serve uploaded files
@@ -75,42 +113,31 @@ app.use("/recycle", recycleRoutes);
 app.use("/user", userRoutes);
 app.use("/wallet", walletRoutes);
 
-// Multer file-filter errors → 415; multer limit errors → 400; others → 500
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  // Multer error: invalid file type from fileFilter
-  if (
-    err.message &&
-    err.message.toLowerCase().includes("invalid file type")
-  ) {
-    return res.status(415).json({ message: err.message });
-  }
-  // Multer error: file too large or other multer limits
-  if ((err as { code?: string }).code === "LIMIT_FILE_SIZE") {
-    return res.status(400).json({ message: "File too large. Maximum size is 10 MB." });
-  }
-
-  const status = (err as { status?: number }).status ?? 500;
-  res.status(status).json({
-    message: err.message || "Internal server error",
-  });
-});
-
-const port = process.env.PORT ? Number(process.env.PORT) : 5000;
+// ── Global safe error handler (must be AFTER routes) ─────────────────────────
+app.use(globalErrorHandler);
 
 const startServer = async () => {
-  const mongoUri = process.env.MONGODB_URI;
-  if (!mongoUri) {
-    throw new Error("MONGODB_URI is not set");
-  }
+  try {
+    await connectDatabase();
 
-  await mongoose.connect(mongoUri);
-  app.listen(port, () => {
-    logStartup(port);
-  });
+    server.listen(PORT, () => {
+      logger.info(`🚀 Server running on port ${PORT}`);
+      logger.info(`📊 Environment: ${env.server.nodeEnv}`);
+
+      if (env.server.isDevelopment) {
+        logger.debug('Development mode - additional debugging enabled');
+      }
+      logStartup(PORT)
+    });
+  } catch (error) {
+    logger.error('Failed to start server:', error);
+    process.exit(1);
+  }
 };
 
-startServer().catch((error) => {
-  // eslint-disable-next-line no-console
-  console.error("Failed to start server:", error);
-  process.exit(1);
-});
+// Only start server if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  startServer();
+}
+
+export { app };

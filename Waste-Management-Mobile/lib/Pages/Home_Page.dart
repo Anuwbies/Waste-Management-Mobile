@@ -408,27 +408,29 @@ class _BalanceCard extends StatelessWidget {
               ],
             ),
 
-            // On-chain rewards if available
-            if (balance.chainRewards > 0) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(
-                    Icons.token_outlined,
-                    size: 16,
+            // On-chain verification badge
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  balance.source == 'chain'
+                      ? Icons.verified_outlined
+                      : Icons.cloud_off_outlined,
+                  size: 16,
+                  color: Colors.white.withValues(alpha: 0.7),
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  balance.source == 'chain'
+                      ? 'Verified on-chain'
+                      : 'Off-chain (cached)',
+                  style: TextStyle(
+                    fontSize: 13,
                     color: Colors.white.withValues(alpha: 0.7),
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${balance.chainRewards} tokens on-chain',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
 
             const SizedBox(height: 20),
 

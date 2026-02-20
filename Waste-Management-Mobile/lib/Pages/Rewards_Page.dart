@@ -338,31 +338,37 @@ class _WalletCard extends StatelessWidget {
               ),
             ],
           ),
-          if (balance.chainRewards > 0) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.token, size: 18, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${balance.chainRewards} ECO Tokens on-chain',
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
             ),
-          ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  balance.source == 'chain'
+                      ? Icons.verified_outlined
+                      : Icons.cloud_off_outlined,
+                  size: 18,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  balance.source == 'chain'
+                      ? 'Verified on-chain'
+                      : 'Off-chain (cached)',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -407,8 +413,21 @@ class _StatsSection extends StatelessWidget {
                     child: _StatItem(
                       icon: Icons.stars_rounded,
                       label: 'Total Earned',
-                      value: '${stats.totalRewards}',
+                      value: '${stats.totalEarned}',
                       color: Colors.amber,
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 50,
+                    color: Colors.grey.shade200,
+                  ),
+                  Expanded(
+                    child: _StatItem(
+                      icon: Icons.redeem_rounded,
+                      label: 'Redeemed',
+                      value: '${stats.totalRedeemed}',
+                      color: Colors.deepOrange,
                     ),
                   ),
                   Container(
@@ -420,7 +439,7 @@ class _StatsSection extends StatelessWidget {
                     child: _StatItem(
                       icon: Icons.recycling_rounded,
                       label: 'Items Recycled',
-                      value: '${_getTotalCount(stats)}',
+                      value: '${stats.recordCount}',
                       color: Colors.green,
                     ),
                   ),

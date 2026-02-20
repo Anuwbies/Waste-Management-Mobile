@@ -9,7 +9,7 @@ export interface IWasteClassification extends Document {
   rewardPoints: number;
   rawLabel?: string;
   modelVersion?: string;
-  status?: string; // "approved" | "denied"
+  status?: string; // "approved" | "denied" | "pending"
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,7 +24,7 @@ const wasteClassificationSchema = new Schema<IWasteClassification>(
     rewardPoints: { type: Number, default: 0 },
     rawLabel: { type: String },
     modelVersion: { type: String },
-    status: { type: String, enum: ["approved", "denied"], default: "approved" },
+    status: { type: String, enum: ["approved", "denied", "pending"], default: "pending" },
   },
   { timestamps: true }
 );

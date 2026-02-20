@@ -4,7 +4,6 @@ import fs from "fs";
 import { AuthRequest } from "../middleware/auth";
 import WasteClassification from "../models/WasteClassification";
 import User from "../models/User";
-import RewardHistory from "../models/RewardHistory";
 import { calculateRewardPoints } from "../services/rewardService";
 import { classifyImage, AiClassificationResult } from "../services/aiService";
 import { CNN_CONFIDENCE_THRESHOLD } from "../config/env";
@@ -69,7 +68,7 @@ export const uploadWasteImage = async (
     const duplicateClassification = await WasteClassification.findOne({
       userId,
       imageHash,
-      status: "approved",
+      status: { $in: ["approved", "pending"] },
     });
 
     if (duplicateClassification) {
@@ -121,7 +120,8 @@ export const uploadWasteImage = async (
       confidence < REWARD_CONFIDENCE_THRESHOLD;
 
     const rewardPoints = isDenied ? 0 : calculateRewardPoints(wasteType);
-    const status = isDenied ? "denied" : "approved";
+    // Use "pending" — reward is NOT granted yet; only POST /recycle grants rewards.
+    const status = isDenied ? "denied" : "pending";
 
     // Save classification record
     const wasteRecord = await WasteClassification.create({
@@ -136,20 +136,9 @@ export const uploadWasteImage = async (
       status,
     });
 
-    // Only update user rewards if approved
-    if (!isDenied) {
-      user.totalRewards += rewardPoints;
-      await user.save();
-
-      // Record in reward history
-      await RewardHistory.create({
-        userId,
-        type: "classification",
-        points: rewardPoints,
-        description: `Classified ${wasteType} waste (${(confidence * 100).toFixed(0)}% confidence)`,
-        referenceId: wasteRecord._id,
-      });
-    }
+    // NOTE: Rewards are NOT granted here. The user only sees "potential"
+    // points at this stage. Actual reward granting happens in POST /recycle
+    // after the user explicitly submits for rewards.
 
     console.log(
       `[wasteController] Classification: ${wasteType} (${(confidence * 100).toFixed(1)}%) ` +

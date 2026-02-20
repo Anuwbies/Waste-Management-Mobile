@@ -1,5 +1,7 @@
 import { Router } from "express";
 import { authMiddleware } from "../middleware/auth";
+import { apiLimiter } from "../middleware/rateLimit";
+import { validate, redeemSchema } from "../validators/schemas";
 import {
   getRewardBalance,
   getRewardHistory,
@@ -10,8 +12,9 @@ import {
 
 const router = Router();
 
-// All routes are protected
+// All routes are protected + rate-limited
 router.use(authMiddleware);
+router.use(apiLimiter);
 
 // GET /rewards/balance - Get user's reward balance
 router.get("/balance", getRewardBalance);
@@ -26,6 +29,6 @@ router.get("/stats", getRewardStats);
 router.get("/options", getRedemptionOptions);
 
 // POST /rewards/redeem - Redeem points for rewards
-router.post("/redeem", redeemRewards);
+router.post("/redeem", validate(redeemSchema), redeemRewards);
 
 export default router;

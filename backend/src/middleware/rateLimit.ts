@@ -10,7 +10,7 @@
  * production if running multiple instances).
  */
 
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 
 // ---------------------------------------------------------------------------
 // Login rate limiter  –  5 requests / 10 min per IP
@@ -25,12 +25,13 @@ export const loginLimiter = rateLimit({
     message: "Too many login attempts. Please try again later.",
   },
   keyGenerator: (req) => {
-    // Combine IP + email to limit per-account brute-force too
+    // Combine IPv6-safe IP + email to limit per-account brute-force too
+    const ip = ipKeyGenerator(req.ip ?? "0.0.0.0");
     const email =
       typeof req.body?.email === "string"
         ? req.body.email.toLowerCase().trim()
         : "";
-    return `${req.ip}:${email}`;
+    return `${ip}:${email}`;
   },
 });
 
@@ -73,5 +74,47 @@ export const authGeneralLimiter = rateLimit({
   message: {
     code: "TOO_MANY_ATTEMPTS",
     message: "Too many requests. Please try again later.",
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Upload / classify limiter  –  30 req / 5 min per IP
+// ---------------------------------------------------------------------------
+export const uploadLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    code: "TOO_MANY_REQUESTS",
+    message: "Too many upload requests. Please slow down.",
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Recycle / reward limiter  –  60 req / 5 min per IP
+// ---------------------------------------------------------------------------
+export const apiLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    code: "TOO_MANY_REQUESTS",
+    message: "Too many requests. Please try again shortly.",
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Global fallback limiter  –  200 req / 5 min per IP (DoS safety net)
+// ---------------------------------------------------------------------------
+export const globalLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 200,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    code: "TOO_MANY_REQUESTS",
+    message: "Rate limit exceeded. Please try again later.",
   },
 });

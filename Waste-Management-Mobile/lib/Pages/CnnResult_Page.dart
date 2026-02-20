@@ -34,39 +34,36 @@ class _CnnResultPageState extends State<CnnResultPage> {
   bool get _meetsThreshold => _classification?.meetsConfidenceThreshold ?? false;
   bool get _isWarning => (_classification?.confidence ?? 0) < ApiConfig.cnnWarningThreshold;
   bool get _isUnknown => _classification?.label.toLowerCase() == 'unknown';
-  bool get _isDenied => _classification?.status == 'denied';
-  bool get _isApproved => _classification?.status == 'approved';
+
+  /// Whether confidence is too low to identify the item reliably.
+  bool get _isLowConfidence => !_meetsThreshold;
 
   Color get _confidenceColor {
-    if (_isDenied) return Colors.red;
-    if (_isApproved) return Colors.green;
     if (_meetsThreshold) return Colors.green;
     if (_isWarning) return Colors.red;
     return Colors.orange;
   }
 
   IconData get _statusIcon {
-    if (_isDenied) return Icons.cancel;
-    if (_isApproved) return Icons.check_circle;
     if (_meetsThreshold) return Icons.check_circle;
     if (_isWarning) return Icons.error;
     return Icons.warning;
   }
 
   String get _statusMessage {
-    if (_isDenied) {
-      return 'Reward denied \u2014 low confidence or unrecognized item';
-    }
-    if (_isApproved) {
-      return 'Classification approved \u2014 reward earned!';
-    }
     if (_meetsThreshold) {
       return 'High confidence classification';
     } else if (_isWarning) {
-      return 'Confidence too low to qualify for rewards. Please retake the photo.';
+      return 'Confidence too low. Please retake with better lighting.';
     } else {
       return 'Confidence below reward threshold \u2014 retake for a clearer image';
     }
+  }
+
+  /// Display label — shows friendly text when confidence is too low.
+  String get _displayLabel {
+    if (_isLowConfidence) return 'Unrecognized Item';
+    return _classification!.label.toUpperCase();
   }
 
   void _proceedToSuggestion() {
@@ -144,12 +141,12 @@ class _CnnResultPageState extends State<CnnResultPage> {
             _buildImagePreview(),
             const SizedBox(height: 16),
 
-            // Backend status banner
-            _buildStatusBanner(),
+            // Eligibility banner
+            _buildEligibilityBanner(),
             const SizedBox(height: 16),
 
-            // Warning for unknown type
-            if (_isUnknown) _buildUnknownWarning(),
+            // Warning for unknown type or low confidence
+            if (_isUnknown || _isLowConfidence) _buildLowConfidenceWarning(),
 
             // Classification result card
             _buildClassificationCard(),
@@ -210,26 +207,25 @@ class _CnnResultPageState extends State<CnnResultPage> {
     );
   }
 
-  /// Backend decision banner — approved or denied
-  Widget _buildStatusBanner() {
-    if (_classification?.status == null) return const SizedBox.shrink();
-
-    final isApproved = _isApproved;
+  /// Eligibility banner — tells the user whether this scan qualifies for
+  /// rewards, WITHOUT implying that rewards have already been granted.
+  Widget _buildEligibilityBanner() {
+    final eligible = _meetsThreshold;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: isApproved ? Colors.green.shade50 : Colors.red.shade50,
+        color: eligible ? Colors.green.shade50 : Colors.orange.shade50,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: isApproved ? Colors.green.shade200 : Colors.red.shade200,
+          color: eligible ? Colors.green.shade200 : Colors.orange.shade200,
         ),
       ),
       child: Row(
         children: [
           Icon(
-            isApproved ? Icons.check_circle : Icons.cancel,
-            color: isApproved ? Colors.green : Colors.red,
+            eligible ? Icons.check_circle_outline : Icons.info_outline,
+            color: eligible ? Colors.green : Colors.orange,
             size: 24,
           ),
           const SizedBox(width: 12),
@@ -238,21 +234,27 @@ class _CnnResultPageState extends State<CnnResultPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isApproved ? 'REWARD APPROVED' : 'REWARD DENIED',
+                  eligible
+                      ? 'ELIGIBLE FOR REWARDS'
+                      : 'NOT ELIGIBLE FOR REWARDS',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: isApproved ? Colors.green.shade800 : Colors.red.shade800,
+                    color: eligible
+                        ? Colors.green.shade800
+                        : Colors.orange.shade800,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  isApproved
-                      ? '+${_classification!.potentialPoints} points earned'
-                      : 'Low confidence or unrecognized waste type',
+                  eligible
+                      ? 'Potential +${_classification!.potentialPoints} points — submit after reviewing disposal instructions'
+                      : 'Confidence too low — retake with better lighting',
                   style: TextStyle(
                     fontSize: 12,
-                    color: isApproved ? Colors.green.shade700 : Colors.red.shade700,
+                    color: eligible
+                        ? Colors.green.shade700
+                        : Colors.orange.shade700,
                   ),
                 ),
               ],
@@ -263,8 +265,8 @@ class _CnnResultPageState extends State<CnnResultPage> {
     );
   }
 
-  /// Warning banner for unknown waste type
-  Widget _buildUnknownWarning() {
+  /// Warning banner for low confidence / unrecognized items
+  Widget _buildLowConfidenceWarning() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: Container(
@@ -281,8 +283,8 @@ class _CnnResultPageState extends State<CnnResultPage> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'This item could not be identified. Try a clearer photo '
-                'with better lighting, or a different angle.',
+                'Confidence too low. Please retake with better lighting '
+                'or a different angle for a clearer result.',
                 style: TextStyle(fontSize: 13, color: Colors.amber.shade900),
               ),
             ),
@@ -318,15 +320,27 @@ class _CnnResultPageState extends State<CnnResultPage> {
 
             // Classification label
             Text(
-              _classification!.label.toUpperCase(),
-              style: const TextStyle(
+              _displayLabel,
+              style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF333333),
+                color: _isLowConfidence
+                    ? Colors.grey[600]!
+                    : const Color(0xFF333333),
               ),
             ),
-            if (_classification!.rawLabel != null &&
-                _classification!.rawLabel!.toLowerCase() != _classification!.label.toLowerCase()) ...[              const SizedBox(height: 4),
+            if (_isLowConfidence) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Not enough confidence to classify',
+                style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+              ),
+            ],
+            if (!_isLowConfidence &&
+                _classification!.rawLabel != null &&
+                _classification!.rawLabel!.toLowerCase() !=
+                    _classification!.label.toLowerCase()) ...[
+              const SizedBox(height: 4),
               Text(
                 'Model prediction: ${_classification!.rawLabel}',
                 style: TextStyle(fontSize: 12, color: Colors.grey[500]),
@@ -352,31 +366,53 @@ class _CnnResultPageState extends State<CnnResultPage> {
             ),
             const SizedBox(height: 16),
 
-            // Potential points
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.stars, color: Colors.amber, size: 24),
-                  const SizedBox(width: 8),
-                  Text(
-                    _isDenied
-                        ? '0 points (denied)'
-                        : '+${_classification!.potentialPoints} points',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: _isDenied ? Colors.red : Colors.green,
+            // Potential points (reward has NOT been granted yet)
+            if (_meetsThreshold)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.stars, color: Colors.amber, size: 24),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Potential +${_classification!.potentialPoints} pts',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.block, color: Colors.grey, size: 22),
+                    SizedBox(width: 8),
+                    Text(
+                      'Rewards unavailable',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
           ],
         ),
       ),
