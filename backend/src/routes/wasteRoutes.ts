@@ -3,7 +3,7 @@ import crypto from "crypto";
 import multer from "multer";
 import path from "path";
 import { authMiddleware } from "../middleware/auth";
-import { uploadLimiter, apiLimiter } from "../middleware/rateLimit";
+import { uploadLimiter, apiLimiter, suggestionLimiter } from "../middleware/rateLimit";
 import { validate, disposalSuggestionSchema } from "../validators/schemas";
 import {
   uploadWasteImage,
@@ -74,7 +74,7 @@ router.post("/upload", uploadLimiter, upload.single("image"), uploadWasteImage);
 router.post("/classify", uploadLimiter, upload.single("image"), classifyWaste);
 
 // POST /waste/suggestion - Get disposal suggestions for a waste type
-router.post("/suggestion", apiLimiter, validate(disposalSuggestionSchema), getDisposalSuggestion);
+router.post("/suggestion", suggestionLimiter, validate(disposalSuggestionSchema), getDisposalSuggestion);
 
 // GET /waste/history - Get classification history
 router.get("/history", apiLimiter, getWasteHistory);

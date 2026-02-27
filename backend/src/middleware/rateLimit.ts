@@ -92,6 +92,20 @@ export const uploadLimiter = rateLimit({
 });
 
 // ---------------------------------------------------------------------------
+// LLM suggestion limiter  –  15 req / 5 min per IP (expensive upstream call)
+// ---------------------------------------------------------------------------
+export const suggestionLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    code: "TOO_MANY_REQUESTS",
+    message: "Too many suggestion requests. Please wait before trying again.",
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Recycle / reward limiter  –  60 req / 5 min per IP
 // ---------------------------------------------------------------------------
 export const apiLimiter = rateLimit({

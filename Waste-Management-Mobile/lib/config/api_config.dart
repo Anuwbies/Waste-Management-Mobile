@@ -1,24 +1,58 @@
-/// API Configuration
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// API Configuration — runtime-resolved.
 ///
-/// Change these values based on your environment:
-/// - Development (Android Emulator): http://10.0.2.2:5000
-/// - Development (iOS Simulator): http://localhost:5000
-/// - Development (Physical Device): http://<your-local-ip>:5000
-/// - Production: https://your-production-api.com
+/// Priority for [baseUrl]:
+///   1. SharedPreferences override  (Developer Settings screen)
+///   2. dotenv value from assets/env/.env.<ENV>
+///   3. Hardcoded fallback (10.0.2.2:5000 — Android emulator default)
+///
+/// Call [ApiConfig.init()] once in main() after dotenv.load().
 
 class ApiConfig {
-  // Private constructor
   ApiConfig._();
 
-  /// Base URL for API requests
-  ///
-  /// Android Emulator: 10.0.2.2 points to host machine's localhost
-  /// iOS Simulator: localhost works directly
-  /// Physical device: use your computer's local IP address
-  static const String baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:5000',
-  );
+  // ── SharedPreferences key ──────────────────────────────────────────────
+  static const String _baseUrlPrefKey = 'dev_api_base_url';
+
+  // ── Fallback (compile-time, zero-dependency) ───────────────────────────
+  static const String _fallbackBaseUrl = 'http://10.0.2.2:5000';
+
+  // ── Runtime base URL ──────────────────────────────────────────────────
+  static String _baseUrl = _fallbackBaseUrl;
+
+  /// The active API base URL. Always resolved at runtime — never requires
+  /// `flutter clean` when switching devices.
+  static String get baseUrl => _baseUrl;
+
+  /// Overwrite the base URL at runtime (used by Developer Settings).
+  /// Persists to SharedPreferences so the value survives app restart.
+  static Future<void> setBaseUrl(String url) async {
+    _baseUrl = url.trimRight().endsWith('/')
+        ? url.trimRight().substring(0, url.trimRight().length - 1)
+        : url.trim();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_baseUrlPrefKey, _baseUrl);
+  }
+
+  /// Clear the SharedPreferences override and fall back to dotenv/default.
+  static Future<void> resetBaseUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_baseUrlPrefKey);
+    _baseUrl = dotenv.env['API_BASE_URL'] ?? _fallbackBaseUrl;
+  }
+
+  /// Call once in main(), after [dotenv.load()].
+  static Future<void> init() async {
+    final prefs = await SharedPreferences.getInstance();
+    final override = prefs.getString(_baseUrlPrefKey);
+    if (override != null && override.isNotEmpty) {
+      _baseUrl = override;
+    } else {
+      _baseUrl = dotenv.env['API_BASE_URL'] ?? _fallbackBaseUrl;
+    }
+  }
 
   static const String googleServerClientId = String.fromEnvironment(
     'GOOGLE_SERVER_CLIENT_ID',

@@ -1,10 +1,13 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../models/scan_session.dart';
 import '../services/waste_service.dart';
 import '../services/api_client.dart';
+import '../services/connectivity_service.dart';
+import '../utils/error_card.dart';
 import 'Camera/Camera_Page.dart';
 import 'CnnResult_Page.dart';
 
@@ -21,8 +24,15 @@ class ScanPage extends StatefulWidget {
 class _ScanPageState extends State<ScanPage> {
   final WasteService _wasteService = WasteService();
   final ImagePicker _imagePicker = ImagePicker();
+  final ConnectivityService _connectivity = ConnectivityService();
 
   bool _isUploading = false;
+
+  /// The image that was picked / captured. Kept around for retry.
+  File? _pendingImage;
+
+  /// Structured error state – null means no error.
+  _ScanError? _error;
 
   /// Open camera, await File result
   Future<void> _captureImage() async {
@@ -63,17 +73,46 @@ class _ScanPageState extends State<ScanPage> {
   /// Upload image to backend and navigate to result page
   Future<void> _uploadAndNavigate(File imageFile) async {
     if (_isUploading) return;
-    setState(() => _isUploading = true);
+
+    // Keep image in memory for retry
+    _pendingImage = imageFile;
+
+    setState(() {
+      _isUploading = true;
+      _error = null;
+    });
+
+    // ── Fail-fast offline check ────────────────────────────────────
+    if (!await _connectivity.isConnected) {
+      if (!mounted) return;
+      setState(() {
+        _isUploading = false;
+        _error = const _ScanError(
+          icon: Icons.wifi_off,
+          iconColor: Colors.blueGrey,
+          title: 'No Internet Connection',
+          message:
+              'Please check your Wi-Fi or mobile data and try again.\n'
+              'Your photo has been saved — no need to retake it.',
+        );
+      });
+      return;
+    }
 
     try {
-      debugPrint('[ScanPage] Uploading: ${imageFile.path} (${imageFile.lengthSync()} bytes)');
+      if (kDebugMode) {
+        debugPrint(
+            '[ScanPage] Uploading: ${imageFile.path} (${imageFile.lengthSync()} bytes)');
+      }
 
       final result = await _wasteService.uploadAndClassify(imageFile);
       final c = result.classification;
 
-      debugPrint('[ScanPage] Result: ${c.wasteType} '
-          '(${(c.confidence * 100).toStringAsFixed(1)}%) '
-          'raw=${c.rawLabel} status=${c.status} pts=${c.rewardPoints}');
+      if (kDebugMode) {
+        debugPrint('[ScanPage] Result: ${c.wasteType} '
+            '(${(c.confidence * 100).toStringAsFixed(1)}%) '
+            'raw=${c.rawLabel} status=${c.status} pts=${c.rewardPoints}');
+      }
 
       if (!mounted) return;
 
@@ -102,40 +141,110 @@ class _ScanPageState extends State<ScanPage> {
         MaterialPageRoute(builder: (_) => CnnResultPage(session: session)),
       );
     } on ApiException catch (e) {
-      debugPrint('[ScanPage] Upload failed: ${e.message} (${e.statusCode})');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'Retry',
-              textColor: Colors.white,
-              onPressed: () => _uploadAndNavigate(imageFile),
-            ),
-          ),
-        );
+      if (kDebugMode) {
+        debugPrint(
+            '[ScanPage] Upload failed: ${e.message} (${e.statusCode})');
       }
-    } catch (e) {
-      debugPrint('[ScanPage] Unexpected error: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('Failed to classify image. Please try again.'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'Retry',
-              textColor: Colors.white,
-              onPressed: () => _uploadAndNavigate(imageFile),
-            ),
-          ),
-        );
+      if (!mounted) return;
+      setState(() {
+        _error = _mapApiError(e);
+      });
+    } catch (e, stack) {
+      if (kDebugMode) {
+        debugPrint('[ScanPage] Unexpected error: $e');
+        debugPrint('[ScanPage] Stack: $stack');
       }
+      if (!mounted) return;
+      setState(() {
+        _error = const _ScanError(
+          title: 'Classification Failed',
+          message:
+              'We couldn\'t analyze the image right now.\n'
+              'Your photo is saved — tap Retry to try again.',
+        );
+      });
     } finally {
       if (mounted) setState(() => _isUploading = false);
     }
+  }
+
+  /// Map [ApiException] to a user-friendly [_ScanError].
+  _ScanError _mapApiError(ApiException e) {
+    switch (e.statusCode) {
+      case 401:
+        // Redirect to login
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            Navigator.of(context).popUntil((route) => route.isFirst);
+          }
+        });
+        return const _ScanError(
+          icon: Icons.lock_outline,
+          iconColor: Color(0xFFEF6C00),
+          title: 'Session Expired',
+          message: 'Your login session has expired. Redirecting to login…',
+          showRetry: false,
+        );
+      case 408:
+        return const _ScanError(
+          icon: Icons.timer_off,
+          iconColor: Colors.orange,
+          title: 'Request Timed Out',
+          message:
+              'The server took too long to respond.\n'
+              'Your photo is saved — tap Retry to try again.',
+        );
+      case 413:
+        return const _ScanError(
+          icon: Icons.photo_size_select_large,
+          iconColor: Colors.orange,
+          title: 'Image Too Large',
+          message:
+              'The image file exceeds the size limit.\n'
+              'Please retake with a lower resolution.',
+          showRetry: false,
+        );
+      case 503:
+        return const _ScanError(
+          icon: Icons.cloud_off,
+          iconColor: Colors.blueGrey,
+          title: 'AI Service Unavailable',
+          message:
+              'The classification service is temporarily down.\n'
+              'Your photo is saved — please try again shortly.',
+        );
+      case 500:
+      case 502:
+      case 504:
+        return const _ScanError(
+          icon: Icons.cloud_off,
+          iconColor: Colors.red,
+          title: 'Server Error',
+          message:
+              'Something went wrong on our end.\n'
+              'Your photo is saved — tap Retry to try again.',
+        );
+      default:
+        return _ScanError(
+          title: 'Classification Failed',
+          message:
+              'We couldn\'t analyze the image right now.\n'
+              'Your photo is saved — tap Retry to try again.',
+          detail: e.statusCode != null ? 'Error ${e.statusCode}' : null,
+        );
+    }
+  }
+
+  /// Retry with the same image.
+  void _retryUpload() {
+    if (_pendingImage != null) {
+      _uploadAndNavigate(_pendingImage!);
+    }
+  }
+
+  /// Dismiss error and return to the main scan UI.
+  void _dismissError() {
+    setState(() => _error = null);
   }
 
   @override
@@ -320,6 +429,23 @@ class _ScanPageState extends State<ScanPage> {
                 ),
               ),
             ),
+
+          // Error overlay — keeps image in memory for retry
+          if (_error != null && !_isUploading)
+            Container(
+              color: const Color(0xFFF5F5F5),
+              child: ErrorCard(
+                icon: _error!.icon,
+                iconColor: _error!.iconColor,
+                title: _error!.title,
+                message: _error!.message,
+                detail: _error!.detail,
+                retryLabel: 'Retry',
+                onRetry: _error!.showRetry ? _retryUpload : null,
+                secondaryLabel: 'Go Back',
+                onSecondary: _dismissError,
+              ),
+            ),
         ],
       ),
     );
@@ -343,4 +469,26 @@ class _ScanPageState extends State<ScanPage> {
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Structured error model for ScanPage
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ScanError {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String message;
+  final String? detail;
+  final bool showRetry;
+
+  const _ScanError({
+    this.icon = Icons.error_outline,
+    this.iconColor = Colors.red,
+    required this.title,
+    required this.message,
+    this.detail,
+    this.showRetry = true,
+  });
 }

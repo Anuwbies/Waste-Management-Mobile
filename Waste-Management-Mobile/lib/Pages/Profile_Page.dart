@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:waste_management/Pages/About_page.dart';
+import 'package:waste_management/Pages/DeveloperSettings_Page.dart';
 import 'package:waste_management/Pages/Faq_Page.dart';
 import 'package:waste_management/Pages/PrivacyPolicy.dart';
 import 'package:waste_management/Pages/TermsOfUse_Page.dart';
@@ -217,6 +219,20 @@ class _ProfilePageState extends State<ProfilePage> {
                         );
                       },
                     ),
+                    // Developer Settings — debug builds only
+                    if (kDebugMode)
+                      _ProfileItem(
+                        icon: Icons.developer_mode,
+                        title: 'Developer Settings',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    const DeveloperSettingsPage()),
+                          );
+                        },
+                      ),
                     _ProfileItem(
                       icon: Icons.logout,
                       title: 'Log Out',

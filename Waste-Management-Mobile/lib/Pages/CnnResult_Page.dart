@@ -319,14 +319,17 @@ class _CnnResultPageState extends State<CnnResultPage> {
             const SizedBox(height: 16),
 
             // Classification label
-            Text(
-              _displayLabel,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: _isLowConfidence
-                    ? Colors.grey[600]!
-                    : const Color(0xFF333333),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                _displayLabel,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: _isLowConfidence
+                      ? Colors.grey[600]!
+                      : const Color(0xFF333333),
+                ),
               ),
             ),
             if (_isLowConfidence) ...[
@@ -354,12 +357,16 @@ class _CnnResultPageState extends State<CnnResultPage> {
               children: [
                 Icon(_statusIcon, color: _confidenceColor, size: 20),
                 const SizedBox(width: 8),
-                Text(
-                  _statusMessage,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: _confidenceColor,
-                    fontWeight: FontWeight.w500,
+                Flexible(
+                  child: Text(
+                    _statusMessage,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _confidenceColor,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                    softWrap: true,
                   ),
                 ),
               ],

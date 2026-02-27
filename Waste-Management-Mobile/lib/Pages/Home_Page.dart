@@ -826,7 +826,7 @@ class _RewardsGuideSection extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         SizedBox(
-          height: 160,
+          height: 180,
           child: ListView(
             scrollDirection: Axis.horizontal,
             children: const [
@@ -965,17 +965,22 @@ class _GuideCard extends StatelessWidget {
               fontWeight: FontWeight.bold,
               fontSize: 14,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 4),
-          Text(
-            description,
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-              height: 1.3,
+          Expanded(
+            child: Text(
+              description,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+                height: 1.3,
+              ),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              softWrap: true,
             ),
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

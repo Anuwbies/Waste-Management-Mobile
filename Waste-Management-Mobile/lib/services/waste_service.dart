@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import '../models/waste_classification.dart';
 import '../models/scan_session.dart';
+import '../models/disposal_guide.dart';
 import '../config/api_config.dart';
 import 'api_client.dart';
 import 'cnn_classifier.dart';
@@ -214,6 +215,51 @@ class WasteService {
       // Fallback to default suggestions on any error
       debugPrint('Error getting suggestion: $e, using defaults');
       return DisposalSuggestion.getDefault(wasteLabel);
+    }
+  }
+
+  /// Get LLM-powered disposal guide from backend.
+  ///
+  /// Calls `POST /waste/suggestion` with the full classification context
+  /// and returns a structured [DisposalGuide].
+  ///
+  /// On failure the error is **not** swallowed — the caller decides whether
+  /// to retry or show a fallback.
+  Future<DisposalGuide> getDisposalGuide({
+    required String wasteType,
+    required double confidence,
+    List<String>? topK,
+    String? rawLabel,
+  }) async {
+    final payload = <String, dynamic>{
+      'wasteType': wasteType,
+      'confidence': confidence,
+    };
+    if (topK != null && topK.isNotEmpty) payload['topK'] = topK;
+    if (rawLabel != null && rawLabel.isNotEmpty) payload['rawLabel'] = rawLabel;
+
+    if (kDebugMode) {
+      debugPrint('[WasteService] POST ${ApiConfig.wasteSuggestion}');
+      debugPrint('[WasteService]   payload: $payload');
+    }
+
+    try {
+      final response = await _api.post(
+        ApiConfig.wasteSuggestion,
+        body: payload,
+      );
+
+      final guide = DisposalGuide.fromJson(response);
+
+      if (kDebugMode) {
+        debugPrint('[WasteService] DisposalGuide received: $guide');
+      }
+
+      return guide;
+    } on ApiException {
+      rethrow; // Let the UI handle specific status codes (401, 503, etc.)
+    } catch (e) {
+      throw ApiException('Failed to load disposal guide: $e');
     }
   }
 

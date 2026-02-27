@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'Pages/Welcome_Page.dart';
 import 'Pages/NavigationBar_Page.dart';
+import 'config/api_config.dart';
 import 'services/auth_service.dart';
 import 'services/cnn_classifier.dart';
 
@@ -13,6 +15,16 @@ Future<void> main() async {
   _setupGlobalErrorHandling();
 
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ── Load environment variables ────────────────────────────────────────
+  // Use --dart-define=ENV=prod to switch to .env.prod at build time.
+  // Default: .env.dev  (safe for local development)
+  const envName = String.fromEnvironment('ENV', defaultValue: 'dev');
+  await dotenv.load(fileName: 'assets/env/.env.$envName');
+
+  // Initialise ApiConfig (reads dotenv + SharedPreferences override)
+  await ApiConfig.init();
+  if (kDebugMode) debugPrint('[Main] API base URL → ${ApiConfig.baseUrl}');
 
   // Pre-initialize TFLite CNN classifier in background (non-blocking)
   _initializeCnnClassifier();

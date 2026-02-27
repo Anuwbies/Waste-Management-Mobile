@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:path/path.dart' as path;
+import '../config/api_config.dart';
 
 /// Custom exception for API errors
 class ApiException implements Exception {
@@ -16,6 +18,58 @@ class ApiException implements Exception {
 
   @override
   String toString() => message;
+
+  /// Whether this error is transient and the same request may succeed later.
+  bool get isRetryable =>
+      statusCode == null ||
+      statusCode == 408 ||
+      statusCode == 429 ||
+      statusCode == 500 ||
+      statusCode == 502 ||
+      statusCode == 503 ||
+      statusCode == 504;
+
+  /// User-safe description — never exposes raw backend text.
+  String get userMessage {
+    switch (statusCode) {
+      case 401:
+        return 'Session expired. Please log in again.';
+      case 403:
+        return 'You don\'t have permission to perform this action.';
+      case 404:
+        return 'The requested resource was not found.';
+      case 408:
+        return 'Request timed out. Please try again.';
+      case 409:
+        return 'This item was already submitted.';
+      case 413:
+        return 'The file is too large. Please use a smaller image.';
+      case 422:
+        return 'Invalid request. Please try again.';
+      case 429:
+        return 'Too many requests. Please wait a moment.';
+      case 500:
+        return 'Server error. Please try again later.';
+      case 502:
+      case 504:
+        return 'Server is temporarily unreachable. Please try again.';
+      case 503:
+        return 'Service temporarily unavailable. Please try again later.';
+      default:
+        // Network-level errors (SocketException, etc.) have no statusCode.
+        if (statusCode == null) {
+          final lower = message.toLowerCase();
+          if (lower.contains('no internet') || lower.contains('socket')) {
+            return 'No internet connection. Please check your network.';
+          }
+          if (lower.contains('timed out') || lower.contains('timeout')) {
+            return 'Request timed out. Please try again.';
+          }
+          return message; // already user-safe from our catch blocks
+        }
+        return 'Something went wrong. Please try again.';
+    }
+  }
 }
 
 /// Centralized API client for all HTTP requests
@@ -25,10 +79,9 @@ class ApiClient {
   factory ApiClient() => _instance;
   ApiClient._internal();
 
-  // Base URL - change this for production
-  static const String _baseUrl = 'http://192.168.1.18:5000'; // Android emulator
-  // static const String _baseUrl = 'http://localhost:5000'; // iOS simulator
-  // static const String _baseUrl = 'https://your-production-api.com'; // Production
+  // Base URL — resolved at runtime from ApiConfig (dotenv / SharedPreferences)
+  // No hardcoded constant needed; every request reads the latest value.
+  String get _baseUrl => ApiConfig.baseUrl;
 
   // Secure storage for JWT token
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
@@ -41,8 +94,14 @@ class ApiClient {
   // Token management
   String? _cachedToken;
 
-  /// Get the base URL
-  String get baseUrl => _baseUrl;
+  /// Default timeout for regular API calls.
+  static final Duration _defaultTimeout = ApiConfig.timeout;
+
+  /// Longer timeout for file uploads.
+  static final Duration _uploadTimeout = ApiConfig.uploadTimeout;
+
+  /// Get the active base URL (delegates to ApiConfig)
+  String get baseUrl => ApiConfig.baseUrl;
 
   /// Get stored JWT token
   Future<String?> getToken() async {
@@ -113,6 +172,11 @@ class ApiClient {
     
     try {
       data = jsonDecode(response.body) as Map<String, dynamic>;
+    } on FormatException {
+      throw ApiException(
+        'Invalid response format',
+        statusCode: response.statusCode,
+      );
     } catch (e) {
       throw ApiException(
         'Invalid response format',
@@ -136,24 +200,58 @@ class ApiClient {
     throw ApiException(message, statusCode: response.statusCode, data: data);
   }
 
+  // ── Debug logging helpers ───────────────────────────────────────────────
+
+  void _logRequest(String method, Uri uri, {dynamic body}) {
+    if (kDebugMode) {
+      debugPrint('[ApiClient] \u2192 $method $uri');
+      if (body != null) {
+        final s = body.toString();
+        debugPrint('[ApiClient]   body: ${s.length > 400 ? '${s.substring(0, 400)}\u2026' : s}');
+      }
+    }
+  }
+
+  void _logResponse(String method, Uri uri, http.Response response) {
+    if (kDebugMode) {
+      debugPrint('[ApiClient] \u2190 $method $uri [${response.statusCode}]');
+      final b = response.body;
+      debugPrint('[ApiClient]   body: ${b.length > 500 ? '${b.substring(0, 500)}\u2026' : b}');
+    }
+  }
+
+  void _logError(String method, Uri uri, Object error, [StackTrace? stack]) {
+    if (kDebugMode) {
+      debugPrint('[ApiClient] \u2716 $method $uri  error=$error');
+      if (stack != null) debugPrint('[ApiClient]   stack: $stack');
+    }
+  }
+
   /// GET request
   Future<Map<String, dynamic>> get(
     String endpoint, {
     Map<String, String>? queryParams,
     bool requireAuth = true,
   }) async {
+    final uri = Uri.parse('$_baseUrl$endpoint').replace(
+      queryParameters: queryParams,
+    );
+    _logRequest('GET', uri);
     try {
-      final uri = Uri.parse('$_baseUrl$endpoint').replace(
-        queryParameters: queryParams,
-      );
-      
       final headers = await _buildHeaders(requireAuth: requireAuth);
-      final response = await _client.get(uri, headers: headers);
-      
+      final response = await _client.get(uri, headers: headers)
+          .timeout(_defaultTimeout);
+      _logResponse('GET', uri, response);
       return _parseResponse(response);
-    } on SocketException {
+    } on TimeoutException {
+      _logError('GET', uri, 'TimeoutException');
+      throw ApiException('Request timed out. Please try again.',
+          statusCode: 408);
+    } on SocketException catch (e) {
+      _logError('GET', uri, e);
       throw ApiException('No internet connection');
     } on http.ClientException catch (e) {
+      _logError('GET', uri, e);
       throw ApiException('Network error: ${e.message}');
     }
   }
@@ -164,20 +262,26 @@ class ApiClient {
     Map<String, dynamic>? body,
     bool requireAuth = true,
   }) async {
+    final uri = Uri.parse('$_baseUrl$endpoint');
+    _logRequest('POST', uri, body: body);
     try {
-      final uri = Uri.parse('$_baseUrl$endpoint');
       final headers = await _buildHeaders(requireAuth: requireAuth);
-      
       final response = await _client.post(
         uri,
         headers: headers,
         body: body != null ? jsonEncode(body) : null,
-      );
-      
+      ).timeout(_defaultTimeout);
+      _logResponse('POST', uri, response);
       return _parseResponse(response);
-    } on SocketException {
+    } on TimeoutException {
+      _logError('POST', uri, 'TimeoutException');
+      throw ApiException('Request timed out. Please try again.',
+          statusCode: 408);
+    } on SocketException catch (e) {
+      _logError('POST', uri, e);
       throw ApiException('No internet connection');
     } on http.ClientException catch (e) {
+      _logError('POST', uri, e);
       throw ApiException('Network error: ${e.message}');
     }
   }
@@ -188,20 +292,26 @@ class ApiClient {
     Map<String, dynamic>? body,
     bool requireAuth = true,
   }) async {
+    final uri = Uri.parse('$_baseUrl$endpoint');
+    _logRequest('PUT', uri, body: body);
     try {
-      final uri = Uri.parse('$_baseUrl$endpoint');
       final headers = await _buildHeaders(requireAuth: requireAuth);
-      
       final response = await _client.put(
         uri,
         headers: headers,
         body: body != null ? jsonEncode(body) : null,
-      );
-      
+      ).timeout(_defaultTimeout);
+      _logResponse('PUT', uri, response);
       return _parseResponse(response);
-    } on SocketException {
+    } on TimeoutException {
+      _logError('PUT', uri, 'TimeoutException');
+      throw ApiException('Request timed out. Please try again.',
+          statusCode: 408);
+    } on SocketException catch (e) {
+      _logError('PUT', uri, e);
       throw ApiException('No internet connection');
     } on http.ClientException catch (e) {
+      _logError('PUT', uri, e);
       throw ApiException('Network error: ${e.message}');
     }
   }
@@ -211,16 +321,23 @@ class ApiClient {
     String endpoint, {
     bool requireAuth = true,
   }) async {
+    final uri = Uri.parse('$_baseUrl$endpoint');
+    _logRequest('DELETE', uri);
     try {
-      final uri = Uri.parse('$_baseUrl$endpoint');
       final headers = await _buildHeaders(requireAuth: requireAuth);
-      
-      final response = await _client.delete(uri, headers: headers);
-      
+      final response = await _client.delete(uri, headers: headers)
+          .timeout(_defaultTimeout);
+      _logResponse('DELETE', uri, response);
       return _parseResponse(response);
-    } on SocketException {
+    } on TimeoutException {
+      _logError('DELETE', uri, 'TimeoutException');
+      throw ApiException('Request timed out. Please try again.',
+          statusCode: 408);
+    } on SocketException catch (e) {
+      _logError('DELETE', uri, e);
       throw ApiException('No internet connection');
     } on http.ClientException catch (e) {
+      _logError('DELETE', uri, e);
       throw ApiException('Network error: ${e.message}');
     }
   }
@@ -233,8 +350,9 @@ class ApiClient {
     Map<String, String>? fields,
     bool requireAuth = true,
   }) async {
+    final uri = Uri.parse('$_baseUrl$endpoint');
+    _logRequest('UPLOAD', uri, body: 'file=${file.path}');
     try {
-      final uri = Uri.parse('$_baseUrl$endpoint');
       final request = http.MultipartRequest('POST', uri);
 
       // Add auth header
@@ -250,12 +368,14 @@ class ApiClient {
       final filename = _ensureValidImageFilename(file.path, mimeType);
 
       // Debug logging
-      debugPrint('[ApiClient] Uploading file:');
-      debugPrint('  Path: ${file.path}');
-      debugPrint('  Filename: $filename');
-      debugPrint('  MIME Type: $mimeType');
-      debugPrint('  File exists: ${file.existsSync()}');
-      debugPrint('  File size: ${file.lengthSync()} bytes');
+      if (kDebugMode) {
+        debugPrint('[ApiClient] Uploading file:');
+        debugPrint('  Path: ${file.path}');
+        debugPrint('  Filename: $filename');
+        debugPrint('  MIME Type: $mimeType');
+        debugPrint('  File exists: ${file.existsSync()}');
+        debugPrint('  File size: ${file.lengthSync()} bytes');
+      }
 
       // Add file with explicit content type
       request.files.add(
@@ -272,13 +392,22 @@ class ApiClient {
         request.fields.addAll(fields);
       }
 
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+      final streamedResponse =
+          await request.send().timeout(_uploadTimeout);
+      final response =
+          await http.Response.fromStream(streamedResponse);
 
+      _logResponse('UPLOAD', uri, response);
       return _parseResponse(response);
-    } on SocketException {
+    } on TimeoutException {
+      _logError('UPLOAD', uri, 'TimeoutException');
+      throw ApiException('Upload timed out. Please try again.',
+          statusCode: 408);
+    } on SocketException catch (e) {
+      _logError('UPLOAD', uri, e);
       throw ApiException('No internet connection');
     } on http.ClientException catch (e) {
+      _logError('UPLOAD', uri, e);
       throw ApiException('Network error: ${e.message}');
     }
   }
@@ -400,8 +529,9 @@ class ApiClient {
     Map<String, String>? fields,
     bool requireAuth = true,
   }) async {
+    final uri = Uri.parse('$_baseUrl$endpoint');
+    _logRequest('UPLOAD_BYTES', uri, body: 'filename=$filename size=${bytes.length}');
     try {
-      final uri = Uri.parse('$_baseUrl$endpoint');
       final request = http.MultipartRequest('POST', uri);
 
       // Add auth header
@@ -417,10 +547,12 @@ class ApiClient {
       final validFilename = _ensureValidFilenameFromMime(filename, mimeType);
 
       // Debug logging
-      debugPrint('[ApiClient] Uploading bytes:');
-      debugPrint('  Filename: $validFilename');
-      debugPrint('  MIME Type: $mimeType');
-      debugPrint('  Bytes size: ${bytes.length}');
+      if (kDebugMode) {
+        debugPrint('[ApiClient] Uploading bytes:');
+        debugPrint('  Filename: $validFilename');
+        debugPrint('  MIME Type: $mimeType');
+        debugPrint('  Bytes size: ${bytes.length}');
+      }
 
       // Add file from bytes with explicit content type
       request.files.add(
@@ -437,13 +569,22 @@ class ApiClient {
         request.fields.addAll(fields);
       }
 
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
+      final streamedResponse =
+          await request.send().timeout(_uploadTimeout);
+      final response =
+          await http.Response.fromStream(streamedResponse);
 
+      _logResponse('UPLOAD_BYTES', uri, response);
       return _parseResponse(response);
-    } on SocketException {
+    } on TimeoutException {
+      _logError('UPLOAD_BYTES', uri, 'TimeoutException');
+      throw ApiException('Upload timed out. Please try again.',
+          statusCode: 408);
+    } on SocketException catch (e) {
+      _logError('UPLOAD_BYTES', uri, e);
       throw ApiException('No internet connection');
     } on http.ClientException catch (e) {
+      _logError('UPLOAD_BYTES', uri, e);
       throw ApiException('Network error: ${e.message}');
     }
   }

@@ -149,6 +149,8 @@ export const disposalSuggestionSchema = z
   .object({
     wasteType: safeString(1, 50),
     confidence: z.coerce.number().min(0).max(1).optional(),
+    topK: z.array(safeString(1, 100)).max(10).optional(),
+    rawLabel: safeString(0, 100).optional(),
     context: safeString(0, 500).optional(),
   })
   .strip();

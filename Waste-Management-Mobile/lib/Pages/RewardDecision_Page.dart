@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../config/api_config.dart';
 import '../models/scan_session.dart';
 import '../services/api_client.dart';
+import '../services/connectivity_service.dart';
 import '../services/recycling_service.dart';
 
 // ---------------------------------------------------------------------------
@@ -76,6 +78,7 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
     with SingleTickerProviderStateMixin {
   late ScanSession _session;
   final RecyclingService _recyclingService = RecyclingService();
+  final ConnectivityService _connectivity = ConnectivityService();
   bool _isSubmitting = true;
 
   /// Structured error — null when there is no error.
@@ -171,7 +174,9 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
           kind: _ErrorKind.serverError,
           title: 'Server Error',
           description:
-              'Our servers are having trouble right now.\nPlease try again in a few moments.',
+              'Our servers are having trouble right now.\n'
+              'Please try again in a few moments.\n\n'
+              'If your submission went through, it will appear in Activity History.',
           primaryAction: 'Try Again',
           icon: Icons.cloud_off,
           color: Colors.red,
@@ -199,7 +204,8 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
         title: 'Connection Problem',
         description:
             'The request timed out or the network is unreachable.\n'
-            'Please check your connection and try again.',
+            'Please check your connection and try again.\n\n'
+            'If your submission went through, check Activity History.',
         primaryAction: 'Try Again',
         icon: Icons.signal_wifi_connected_no_internet_4,
         color: Colors.orange,
@@ -260,6 +266,12 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
         _isSubmitting = true;
         _error = null;
       });
+
+      // Connectivity pre-check — fail fast if offline
+      if (!await _connectivity.isConnected) {
+        if (kDebugMode) debugPrint('[RewardDecision] Offline — skipping submit');
+        throw const SocketException('No internet connection');
+      }
 
       final decision = await _recyclingService.submitRecyclingEvent(
         imageFile: _session.imageFile,

@@ -55,6 +55,8 @@ dependencies:
   # TFLite for on-device ML inference
   tflite_flutter: ^0.11.0
   image: ^4.3.0
+  flutter_dotenv: ^6.0.0
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:
@@ -73,6 +75,8 @@ dev_dependencies:
 # The following section is specific to Flutter packages.
 flutter:
   assets:
+    - assets/env/.env.dev
+    - assets/env/.env.prod
     - lib/assets/images/google icon.png
     - lib/assets/images/eye open.png
     - lib/assets/images/eye closed.png
