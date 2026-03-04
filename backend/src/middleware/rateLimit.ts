@@ -132,3 +132,53 @@ export const globalLimiter = rateLimit({
     message: "Rate limit exceeded. Please try again later.",
   },
 });
+
+// ---------------------------------------------------------------------------
+// Admin login limiter  –  5 requests / 10 min per IP
+// ---------------------------------------------------------------------------
+export const adminLoginLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    code: "TOO_MANY_ATTEMPTS",
+    message: "Too many admin login attempts. Please try again later.",
+  },
+  keyGenerator: (req) => {
+    const ip = ipKeyGenerator(req.ip ?? "0.0.0.0");
+    const email =
+      typeof req.body?.email === "string"
+        ? req.body.email.toLowerCase().trim()
+        : "";
+    return `admin:${ip}:${email}`;
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Admin API limiter  –  120 requests / 5 min per IP (read-heavy dashboards)
+// ---------------------------------------------------------------------------
+export const adminApiLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    code: "TOO_MANY_REQUESTS",
+    message: "Admin API rate limit exceeded. Please try again shortly.",
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Admin export / archive limiter  –  10 requests / 5 min per IP
+// ---------------------------------------------------------------------------
+export const adminExportLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    code: "TOO_MANY_REQUESTS",
+    message: "Too many export requests. Please wait before trying again.",
+  },
+});

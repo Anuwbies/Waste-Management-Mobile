@@ -150,14 +150,14 @@ class Environment {
         OPENROUTER_API_KEY: this.getString('OPENROUTER_API_KEY'),
         OPENROUTER_MODEL: this.getString('OPENROUTER_MODEL', 'x-ai/grok-4-fast:free'),
         SITE_URL: this.getString('SITE_URL', 'http://localhost:3000'),
-        SITE_NAME: this.getString('SITE_NAME', 'ClarifAI'),
+        SITE_NAME: this.getString('SITE_NAME', 'RecyClean'),
         
         // Email Configuration (Optional)
         EMAIL_HOST: this.getOptionalString('EMAIL_HOST'),
         EMAIL_PORT: this.getNumber('EMAIL_PORT', 587),
         EMAIL_USER: this.getOptionalString('EMAIL_USER'),
         EMAIL_PASS: this.getOptionalString('EMAIL_PASS'),
-        EMAIL_FROM: this.getString('EMAIL_FROM', 'ClarifAI <noreply@clarifai.com>'),
+        EMAIL_FROM: this.getString('EMAIL_FROM', 'RecyClean <noreply@recyclean.com>'),
         EMAIL_SECURE: this.getBoolean('EMAIL_SECURE', false),
         
         // Web Push Notifications (Optional)

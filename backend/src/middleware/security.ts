@@ -32,6 +32,7 @@ const ALLOWED_ORIGINS: (string | RegExp)[] = (() => {
       "http://127.0.0.1:5000",
       "http://10.0.2.2:5000", // Android emulator → host
       /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/, // LAN dev
+      "http://localhost:5173"
     ];
   }
 

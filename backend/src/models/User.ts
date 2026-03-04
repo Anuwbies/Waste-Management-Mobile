@@ -10,6 +10,10 @@ export interface IUser extends Document {
   walletAddress: string;
   totalRewards: number;
 
+  // Admin / role fields
+  role: "user" | "admin" | "superadmin";
+  isAdmin: boolean;
+
   // Password-reset OTP fields
   passwordResetOtpHash?: string;
   passwordResetOtpExpiresAt?: Date;
@@ -34,6 +38,14 @@ const userSchema = new Schema<IUser>(
     emailVerified: { type: Boolean, default: false },
     walletAddress: { type: String, default: "" },
     totalRewards: { type: Number, default: 0 },
+
+    // Admin / role fields
+    role: {
+      type: String,
+      enum: ["user", "admin", "superadmin"],
+      default: "user",
+    },
+    isAdmin: { type: Boolean, default: false },
 
     // Password-reset OTP
     passwordResetOtpHash: { type: String },

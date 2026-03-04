@@ -14,6 +14,7 @@ import authRoutes from "./routes/authRoutes";
 import wasteRoutes from "./routes/wasteRoutes";
 import rewardsRoutes from "./routes/rewardsRoutes";
 import walletRoutes from "./routes/walletRoutes";
+import adminRoutes from "./routes/adminRoutes";
 import { getBlockchainHealth } from "./services/blockchainServiceV2";
 import { getAiHealth } from "./services/aiService";
 import { loggerMiddleware, logStartup } from "./middleware/logger";
@@ -37,7 +38,7 @@ const PORT = env.server.port;
 // ── Trust proxy (required behind Render / Railway / Nginx for correct req.ip)
 if (process.env.DEPLOYED_BEHIND_PROXY === "true" || process.env.NODE_ENV === "production") {
   app.set("trust proxy", 1);
-}
+} 
 
 // ── Security headers ─────────────────────────────────────────────────────────
 app.use(helmetMiddleware);
@@ -112,6 +113,7 @@ app.use("/rewards", rewardsRoutes);
 app.use("/recycle", recycleRoutes);
 app.use("/user", userRoutes);
 app.use("/wallet", walletRoutes);
+app.use("/admin", adminRoutes);
 
 // ── Global safe error handler (must be AFTER routes) ─────────────────────────
 app.use(globalErrorHandler);
@@ -123,7 +125,8 @@ const startServer = async () => {
     server.listen(PORT, () => {
       logger.info(`🚀 Server running on port ${PORT}`);
       logger.info(`📊 Environment: ${env.server.nodeEnv}`);
-
+      logger.info(`🔗 Frontend URL: ${env.cors.frontendUrl}`);
+      
       if (env.server.isDevelopment) {
         logger.debug('Development mode - additional debugging enabled');
       }

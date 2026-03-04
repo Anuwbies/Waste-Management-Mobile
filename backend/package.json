@@ -17,6 +17,7 @@
     "test:all": "ts-node src/tests/smoke_test.ts && ts-node src/tests/security_test.ts && ts-node src/tests/confidence_threshold_test.ts && ts-node src/tests/duplicate_image_test.ts && ts-node src/tests/wallet_smoke_test.ts"
   },
   "dependencies": {
+    "archiver": "^7.0.1",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "crypto": "^1.0.1",
@@ -32,10 +33,11 @@
     "multer": "^1.4.5-lts.1",
     "nodemailer": "^8.0.1",
     "uuid": "^13.0.0",
-    "zod": "^4.3.6",
-    "winston": "^3.17.0"
+    "winston": "^3.17.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/archiver": "^7.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.17",
