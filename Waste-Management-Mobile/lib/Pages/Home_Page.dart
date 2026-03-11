@@ -6,7 +6,6 @@ import '../models/pagination.dart';
 import '../models/recycling_log.dart';
 import '../models/reward_models.dart';
 import '../services/auth_service.dart';
-import '../services/health_service.dart';
 import '../services/recycling_service.dart';
 import '../services/rewards_service.dart';
 import 'ActivityHistory_Page.dart';
@@ -24,7 +23,6 @@ class _HomePageState extends State<HomePage> {
   final AuthService _authService = AuthService();
   final RewardsService _rewardsService = RewardsService();
   final RecyclingService _recyclingService = RecyclingService();
-  final HealthService _healthService = HealthService();
 
   // Dashboard data
   late Future<_DashboardData> _dashboardFuture;
@@ -45,16 +43,12 @@ class _HomePageState extends State<HomePage> {
           pagination: Pagination(page: 1, limit: 5, total: 0, totalPages: 0),
         ),
       ),
-      _healthService.getBlockchainHealth().catchError(
-        (_) => BlockchainHealth(error: 'Could not reach backend'),
-      ),
     ]);
 
     return _DashboardData(
       user: _authService.currentUser,
       balance: results[0] as RewardBalance,
       recentLogs: (results[1] as RecyclingLogsResponse).logs,
-      blockchainHealth: results[2] as BlockchainHealth,
     );
   }
 
@@ -147,10 +141,6 @@ class _HomePageState extends State<HomePage> {
 
                       // Rewards Guide
                       const _RewardsGuideSection(),
-                      const SizedBox(height: 28),
-
-                      // Blockchain Health (dev debug)
-                      _BlockchainHealthSection(health: data.blockchainHealth),
                       const SizedBox(height: 100), // Space for FAB
                     ],
                   ),
@@ -172,13 +162,11 @@ class _DashboardData {
   final UserData? user;
   final RewardBalance balance;
   final List<RecyclingLog> recentLogs;
-  final BlockchainHealth blockchainHealth;
 
   _DashboardData({
     this.user,
     required this.balance,
     required this.recentLogs,
-    required this.blockchainHealth,
   });
 }
 
@@ -403,30 +391,6 @@ class _BalanceCard extends StatelessWidget {
                       fontSize: 16,
                       color: Colors.white.withValues(alpha: 0.8),
                     ),
-                  ),
-                ),
-              ],
-            ),
-
-            // On-chain verification badge
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(
-                  balance.source == 'chain'
-                      ? Icons.verified_outlined
-                      : Icons.cloud_off_outlined,
-                  size: 16,
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  balance.source == 'chain'
-                      ? 'Verified on-chain'
-                      : 'Off-chain (cached)',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.white.withValues(alpha: 0.7),
                   ),
                 ),
               ],
@@ -1034,183 +998,6 @@ class _PointsBadge extends StatelessWidget {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// BLOCKCHAIN HEALTH DEBUG SECTION
-// ============================================================================
-
-class _BlockchainHealthSection extends StatelessWidget {
-  final BlockchainHealth health;
-
-  const _BlockchainHealthSection({required this.health});
-
-  @override
-  Widget build(BuildContext context) {
-    final ok = health.ok;
-    final statusColor = ok ? Colors.green : Colors.red;
-    final statusIcon = ok ? Icons.link : Icons.link_off;
-    final statusLabel = ok ? 'Connected' : 'Disconnected';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Text(
-              'Blockchain Status',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1A1A2E),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: statusColor.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(statusIcon, size: 14, color: statusColor),
-                  const SizedBox(width: 4),
-                  Text(
-                    statusLabel,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: statusColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Column(
-            children: [
-              _HealthRow(
-                label: 'Status',
-                value: statusLabel,
-                icon: statusIcon,
-                color: statusColor,
-              ),
-              if (health.chainId != null)
-                _HealthRow(
-                  label: 'Chain ID',
-                  value: '${health.chainId}',
-                  icon: Icons.tag,
-                ),
-              if (health.blockNumber != null)
-                _HealthRow(
-                  label: 'Block',
-                  value: '#${health.blockNumber}',
-                  icon: Icons.view_module,
-                ),
-              if (health.contractAddress != null)
-                _HealthRow(
-                  label: 'Contract',
-                  value: health.shortContract,
-                  icon: Icons.article_outlined,
-                  copyValue: health.contractAddress,
-                ),
-              if (health.signerAddress != null)
-                _HealthRow(
-                  label: 'Signer',
-                  value: health.shortSigner,
-                  icon: Icons.person_outline,
-                  copyValue: health.signerAddress,
-                ),
-              if (health.error != null)
-                _HealthRow(
-                  label: 'Error',
-                  value: health.error!,
-                  icon: Icons.error_outline,
-                  color: Colors.red,
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _HealthRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color? color;
-  final String? copyValue;
-
-  const _HealthRow({
-    required this.label,
-    required this.value,
-    required this.icon,
-    this.color,
-    this.copyValue,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = color ?? Colors.grey.shade600;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: c),
-          const SizedBox(width: 10),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey.shade600,
-            ),
-          ),
-          const Spacer(),
-          Flexible(
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: c,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          if (copyValue != null) ...[
-            const SizedBox(width: 4),
-            GestureDetector(
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: copyValue!));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Copied to clipboard'),
-                    duration: Duration(seconds: 1),
-                  ),
-                );
-              },
-              child: Icon(Icons.copy, size: 14, color: Colors.grey.shade400),
-            ),
-          ],
         ],
       ),
     );

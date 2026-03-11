@@ -13,6 +13,7 @@ import {
   isBlockchainConfigured,
   getCurrentChainId,
 } from "../services/blockchainServiceV2";
+import { recordAuditEvent } from "../services/adminAuditService";
 
 // ---------------------------------------------------------------------------
 // Helper: read the authoritative on-chain balance for a user.
@@ -405,6 +406,26 @@ export const redeemRewards = async (
     // Re-read authoritative balance after redemption
     const postAuth = await getAuthoritativeBalance(userId!, user.totalRewards);
 
+    // ── Audit Log recording (real-time) ─────────────────────────────
+    recordAuditEvent({
+      userId: user._id,
+      userEmail: user.email,
+      userName: user.name,
+      walletAddress: wallet.address,
+      activityType: "redeem",
+      status: rewardTx.status === "confirmed" ? "confirmed" : "pending",
+      points: -pointsToRedeem,
+      txHash: rewardTx.txHash,
+      chainId,
+      txStatus: rewardTx.status === "confirmed" ? "success" : "pending",
+      rewardTransactionId: rewardTx._id,
+      metadata: {
+        rewardType,
+        rewardName: option?.name || rewardType,
+        redemptionId,
+      },
+    }).catch((err) => console.error("[rewardsController] Audit log failed:", err));
+
     return res.status(200).json({
       message: "Redemption successful",
       redemption: {
@@ -419,6 +440,36 @@ export const redeemRewards = async (
       newBalance: postAuth.balance,
       source: postAuth.source,
     });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * DELETE /rewards/history/:id
+ * Delete a reward transaction record. Only allowed for the owner.
+ */
+export const deleteRewardTransaction = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = req.userId;
+    const { id } = req.params;
+
+    const tx = await RewardTransaction.findOne({
+      _id: id,
+      userId,
+    });
+
+    if (!tx) {
+      return res.status(404).json({ message: "Reward transaction not found" });
+    }
+
+    await RewardTransaction.deleteOne({ _id: id });
+
+    return res.status(200).json({ message: "Reward transaction deleted successfully" });
   } catch (error) {
     return next(error);
   }

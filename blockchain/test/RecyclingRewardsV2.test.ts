@@ -155,7 +155,7 @@ describe("RecyclingRewardsV2", async function () {
       } catch (error: unknown) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
-        expect(errorMessage).to.include("Event already rewarded");
+        expect(errorMessage).to.include("EventAlreadyRewarded");
       }
     });
 
@@ -179,7 +179,7 @@ describe("RecyclingRewardsV2", async function () {
       } catch (error: unknown) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
-        expect(errorMessage).to.include("AccessControl");
+        expect(errorMessage).to.include("AccessControlUnauthorizedAccount");
       }
     });
 
@@ -278,7 +278,7 @@ describe("RecyclingRewardsV2", async function () {
       } catch (error: unknown) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
-        expect(errorMessage).to.include("Insufficient balance");
+        expect(errorMessage).to.include("InsufficientBalance");
       }
     });
 

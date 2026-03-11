@@ -11,6 +11,7 @@ import {
   getWasteHistory,
   getClassification,
   getDisposalSuggestion,
+  deleteClassification,
 } from "../controllers/wasteController";
 
 const router = Router();
@@ -81,5 +82,8 @@ router.get("/history", apiLimiter, getWasteHistory);
 
 // GET /waste/:id - Get single classification
 router.get("/:id", apiLimiter, getClassification);
+
+// DELETE /waste/:id - Delete a classification
+router.delete("/:id", apiLimiter, deleteClassification);
 
 export default router;

@@ -8,6 +8,7 @@ import {
   getRewardStats,
   getRedemptionOptions,
   redeemRewards,
+  deleteRewardTransaction,
 } from "../controllers/rewardsController";
 
 const router = Router();
@@ -30,5 +31,8 @@ router.get("/options", getRedemptionOptions);
 
 // POST /rewards/redeem - Redeem points for rewards
 router.post("/redeem", validate(redeemSchema), redeemRewards);
+
+// DELETE /rewards/history/:id - Delete a reward transaction
+router.delete("/history/:id", deleteRewardTransaction);
 
 export default router;

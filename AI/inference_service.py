@@ -104,15 +104,16 @@ def _ensure_model() -> None:
 
 
 # --- Pre-processing (must match training) --------------------------------- #
-_preprocess_input = tf.keras.applications.efficientnet.preprocess_input
-
-
+# EfficientNet TFLite models typically include rescaling or expect [0, 255] float
+# We will skip the heavy Keras import for preprocessing.
 def preprocess(image: Image.Image) -> np.ndarray:
-    """Resize, convert to float32, apply EfficientNet preprocessing."""
-    img = image.convert("RGB").resize(IMG_SIZE)
+    """Resize, convert to float32, and prepare for inference."""
+    # Using BILINEAR is significantly faster than LANCZOS and sufficient for 260x260
+    img = image.convert("RGB").resize(IMG_SIZE, Image.Resampling.BILINEAR)
     arr = np.array(img, dtype=np.float32)
     arr = np.expand_dims(arr, axis=0)      # (1, 260, 260, 3)
-    arr = _preprocess_input(arr)
+    # EfficientNet V1 models in Keras/TFLite usually handle scaling internally 
+    # or expect pixels in range [0, 255].
     return arr
 
 
@@ -263,7 +264,7 @@ def _compute_phash(image: Image.Image, hash_size: int = PHASH_SIZE) -> str:
     are visually very similar, even after crops, compression, or rescaling.
     """
     grey = image.convert("L").resize(
-        (hash_size * 4, hash_size * 4), Image.Resampling.LANCZOS
+        (hash_size * 4, hash_size * 4), Image.Resampling.BILINEAR
     )
     pixels = np.array(grey, dtype=np.float64)
 

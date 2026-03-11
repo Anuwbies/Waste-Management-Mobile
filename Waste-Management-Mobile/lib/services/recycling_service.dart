@@ -132,4 +132,16 @@ class RecyclingService {
       throw ApiException('Failed to load recycling logs');
     }
   }
+
+  /// Delete a recycling log by ID
+  Future<void> deleteLog(String id) async {
+    try {
+      await _api.delete('/recycle/logs/$id');
+      debugPrint('[RecyclingService] Log $id deleted');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException('Failed to delete recycling log: $e');
+    }
+  }
 }

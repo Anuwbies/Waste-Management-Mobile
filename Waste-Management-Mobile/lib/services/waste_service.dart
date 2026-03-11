@@ -342,6 +342,18 @@ class WasteService {
     }
   }
 
+  /// Delete a classification by ID
+  Future<void> deleteClassification(String id) async {
+    try {
+      await _api.delete('/waste/$id');
+      debugPrint('[WasteService] Classification $id deleted');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException('Failed to delete classification history: $e');
+    }
+  }
+
   /// Get full URL for waste images
   String getImageUrl(String relativePath) {
     return _api.getFileUrl(relativePath);

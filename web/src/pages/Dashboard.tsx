@@ -93,29 +93,6 @@ export default function Dashboard() {
 
             {/* Service status */}
             <div className="mt-8 grid gap-5 md:grid-cols-2">
-              {/* Blockchain */}
-              <div className="rounded-xl border border-slate-200 bg-white p-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <Link2 className="h-5 w-5 text-info" />
-                  <h3 className="text-sm font-semibold text-slate-700">Blockchain</h3>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <StatusPill
-                    online={stats.blockchain.status === 'connected'}
-                    label={stats.blockchain.status}
-                  />
-                  <p className="text-slate-500">
-                    Chain ID: <span className="font-mono text-slate-700">{stats.blockchain.chainId}</span>
-                  </p>
-                  <p className="truncate text-slate-500">
-                    Contract:{' '}
-                    <span className="font-mono text-xs text-slate-700">
-                      {stats.blockchain.contractAddress}
-                    </span>
-                  </p>
-                </div>
-              </div>
-
               {/* AI Service */}
               <div className="rounded-xl border border-slate-200 bg-white p-5">
                 <div className="mb-3 flex items-center gap-2">

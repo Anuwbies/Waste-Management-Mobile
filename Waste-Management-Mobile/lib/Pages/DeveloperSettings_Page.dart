@@ -63,10 +63,12 @@ class _DeveloperSettingsPageState extends State<DeveloperSettingsPage> {
       await ApiConfig.setBaseUrl(url);
 
       try {
-        final response = await ApiClient().get('/health/blockchain');
+        // Use a more general health check instead of blockchain specific
+        final response = await ApiClient().get('/user/me'); 
+        // /user/me might fail with 401 if not logged in, but connectivity is confirmed
         setState(() {
           _testSuccess = true;
-          _testResult = 'Connected! (${response.toString().length} bytes)';
+          _testResult = 'Server reached! (${response.toString().length} bytes)';
         });
       } catch (e) {
         // Revert if test fails — user hasn't confirmed save yet

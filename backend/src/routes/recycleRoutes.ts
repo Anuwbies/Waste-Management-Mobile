@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { recycleWaste, getRecyclingLogs } from "../controllers/recycleController";
+import { recycleWaste, getRecyclingLogs, deleteRecyclingLog } from "../controllers/recycleController";
 import { authMiddleware } from "../middleware/auth";
 import { apiLimiter } from "../middleware/rateLimit";
 import { validate, recycleSchema } from "../validators/schemas";
@@ -15,5 +15,8 @@ router.post("/", validate(recycleSchema), recycleWaste);
 
 // GET /recycle/logs - Get recycling logs
 router.get("/logs", getRecyclingLogs);
+
+// DELETE /recycle/logs/:id - Delete a recycling log
+router.delete("/logs/:id", deleteRecyclingLog);
 
 export default router;

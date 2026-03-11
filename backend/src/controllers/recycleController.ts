@@ -18,6 +18,7 @@ import {
 } from "../services/blockchainServiceV2";
 import { calculateRewardPoints } from "../services/rewardService";
 import { CNN_CONFIDENCE_THRESHOLD } from "../config/env";
+import { recordAuditEvent } from "../services/adminAuditService";
 
 /**
  * Get or create custodial wallet for user
@@ -194,6 +195,21 @@ export const recycleWaste = async (
         rewardPoints: 0,
       });
 
+      // ── Audit Log recording (real-time) ─────────────────────────────
+      recordAuditEvent({
+        userId: user._id,
+        userEmail: user.email,
+        userName: user.name,
+        walletAddress: user.walletAddress,
+        activityType: "recycle",
+        status: "failed",
+        wasteType,
+        confidence,
+        imageHash,
+        points: 0,
+        recyclingLogId: recyclingLog._id,
+      }).catch((err) => console.error("[recycleController] Audit log failed (denied):", err));
+
       return res.status(200).json({
         message:
           "Classification confidence too low — reward denied. Try a clearer photo.",
@@ -339,6 +355,27 @@ export const recycleWaste = async (
         `confidence=${confidence?.toFixed(3)} wasteType=${wasteType} points=${rewardPoints}`
     );
 
+    // ── Audit Log recording (real-time) ─────────────────────────────
+    recordAuditEvent({
+      userId: user._id,
+      userEmail: user.email,
+      userName: user.name,
+      walletAddress: userWallet,
+      activityType: "recycle",
+      status: chainSuccess ? "confirmed" : "failed",
+      wasteType,
+      confidence,
+      imageHash,
+      points: rewardPoints,
+      txHash: recyclingEvent.txHash,
+      chainId,
+      eventHash,
+      txStatus: chainSuccess ? "success" : "failed",
+      recyclingEventId: recyclingEvent._id,
+      recyclingLogId: recyclingLog._id,
+      rewardTransactionId: rewardTx._id,
+    }).catch((err) => console.error("[recycleController] Audit log failed:", err));
+
     return res.status(chainSuccess ? 200 : 502).json({
       message: chainSuccess
         ? "Recycling activity recorded"
@@ -403,6 +440,36 @@ export const getRecyclingLogs = async (
         totalPages: Math.ceil(total / limit),
       },
     });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * DELETE /recycle/logs/:id
+ * Delete a recycling log record. Only allowed for the owner.
+ */
+export const deleteRecyclingLog = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = req.userId;
+    const { id } = req.params;
+
+    const log = await RecyclingLog.findOne({
+      _id: id,
+      userId,
+    });
+
+    if (!log) {
+      return res.status(404).json({ message: "Recycling log not found" });
+    }
+
+    await RecyclingLog.deleteOne({ _id: id });
+
+    return res.status(200).json({ message: "Recycling log deleted successfully" });
   } catch (error) {
     return next(error);
   }

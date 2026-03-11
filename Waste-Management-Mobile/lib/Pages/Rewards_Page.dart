@@ -110,6 +110,46 @@ class _RewardsPageState extends State<RewardsPage>
     }
   }
 
+  Future<void> _deleteTransaction(RewardHistoryItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove from history?'),
+        content: const Text(
+            'This will only remove the record from your display. It does not affect your actual balance.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      // Use the referenceId (RewardTransaction ID) if available, otherwise item.id
+      final idToDelete = item.id ?? item.id;
+      await _rewardsService.deleteTransaction(idToDelete);
+      if (!mounted) return;
+      _refresh(); // reload to get updated history
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Record removed')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to remove: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -184,7 +224,10 @@ class _RewardsPageState extends State<RewardsPage>
                     const SizedBox(height: 24),
 
                     // Reward History
-                    _RewardHistorySection(history: data.history.history),
+                    _RewardHistorySection(
+                      history: data.history.history,
+                      onDelete: _deleteTransaction,
+                    ),
                     const SizedBox(height: 32),
                   ],
                 ),
@@ -708,8 +751,12 @@ class _RewardCard extends StatelessWidget {
 
 class _RewardHistorySection extends StatelessWidget {
   final List<RewardHistoryItem> history;
+  final void Function(RewardHistoryItem item) onDelete;
 
-  const _RewardHistorySection({required this.history});
+  const _RewardHistorySection({
+    required this.history,
+    required this.onDelete,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -764,7 +811,25 @@ class _RewardHistorySection extends StatelessWidget {
                 color: Colors.grey.shade200,
               ),
               itemBuilder: (context, index) {
-                return _HistoryTile(item: history[index]);
+                final item = history[index];
+                return Dismissible(
+                  key: Key(item.id),
+                  direction: DismissDirection.endToStart,
+                  confirmDismiss: (direction) async {
+                    onDelete(item);
+                    return false;
+                  },
+                  background: Container(
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade400,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(Icons.delete_outline, color: Colors.white),
+                  ),
+                  child: _HistoryTile(item: item),
+                );
               },
             ),
           ),

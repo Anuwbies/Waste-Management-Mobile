@@ -401,7 +401,7 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
           ),
           const SizedBox(height: 8),
           Text(
-            'Recording on blockchain',
+            'Updating your points balance',
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey[600],
@@ -679,7 +679,7 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
   String _getStatusSubtitle() {
     switch (_decision?.status) {
       case RewardStatus.approved:
-        return 'Your recycling has been recorded on the blockchain!';
+        return 'Your recycling has been successfully recorded!';
       case RewardStatus.denied:
         return _decision?.reason ?? 'Your submission did not qualify for rewards.';
       case RewardStatus.pending:
@@ -791,16 +791,6 @@ class _RewardDecisionPageState extends State<RewardDecisionPage>
               _session.suggestion!.binType,
               Icons.delete_outline,
             ),
-
-            // Transaction hash (if available)
-            if (_decision?.txHash != null &&
-                _decision!.txHash!.isNotEmpty)
-              _buildDetailRow(
-                'Transaction',
-                '${_decision!.txHash!.substring(0, 10)}...',
-                Icons.receipt_long,
-                onTap: () => _copyToClipboard(_decision!.txHash!),
-              ),
 
             // Event ID (if available)
             if (_decision?.eventId != null && _decision!.eventId!.isNotEmpty)

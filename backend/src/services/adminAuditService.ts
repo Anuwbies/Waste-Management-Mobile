@@ -200,7 +200,7 @@ export async function backfillAuditEvents(): Promise<{
           updatedAt: c.updatedAt,
         },
       },
-      { upsert: true, new: true },
+      { upsert: true, new: true, timestamps: false },
     );
     stats.classifications++;
   }
@@ -249,7 +249,7 @@ export async function backfillAuditEvents(): Promise<{
           updatedAt: e.updatedAt,
         },
       },
-      { upsert: true, new: true },
+      { upsert: true, new: true, timestamps: false },
     );
     stats.recyclingEvents++;
   }
@@ -303,7 +303,7 @@ export async function backfillAuditEvents(): Promise<{
           updatedAt: tx.updatedAt,
         },
       },
-      { upsert: true, new: true },
+      { upsert: true, new: true, timestamps: false },
     );
     stats.rewardTransactions++;
   }

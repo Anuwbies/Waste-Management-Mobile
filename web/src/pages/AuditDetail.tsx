@@ -188,28 +188,6 @@ export default function AuditDetail() {
                 )}
               </Section>
 
-              {/* Blockchain */}
-              <Section icon={Link2} title="Blockchain Transaction">
-                {detail.blockchain ? (
-                  <>
-                    <Row label="TxHash" value={detail.blockchain.txHash} mono />
-                    <Row label="Block #" value={detail.blockchain.blockNumber} />
-                    <Row label="Chain ID" value={detail.blockchain.chainId} />
-                    <Row label="Contract" value={detail.blockchain.contractAddress} mono />
-                    <Row label="Gas Used" value={detail.blockchain.gasUsed} />
-                    <Row label="Status" value={detail.blockchain.status} />
-                  </>
-                ) : (
-                  <p className="text-sm text-slate-400">No blockchain data.</p>
-                )}
-              </Section>
-
-              {/* Hashes */}
-              <Section icon={Hash} title="Event & Image Hashes">
-                <Row label="Event Hash" value={detail.eventHash} mono />
-                <Row label="Image Hash" value={detail.imageHash} mono />
-              </Section>
-
               {/* Image preview placeholder */}
               <Section icon={Image} title="Scan Image">
                 <div className="flex h-40 items-center justify-center rounded-lg bg-slate-50 text-sm text-slate-400">

@@ -9,6 +9,7 @@ import { classifyImage, AiClassificationResult } from "../services/aiService";
 import { generateDisposalGuide, isValidWasteType } from "../services/llmService";
 import { CNN_CONFIDENCE_THRESHOLD } from "../config/env";
 import { computeImageHash } from "../services/blockchainServiceV2";
+import { recordAuditEvent } from "../services/adminAuditService";
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, "..", "..", "uploads");
@@ -136,6 +137,25 @@ export const uploadWasteImage = async (
       modelVersion,
       status,
     });
+
+    // ── Audit Log recording (real-time) ─────────────────────────────
+    // Off-load to audit trail so admin can see scans in the web dashboard.
+    recordAuditEvent({
+      userId: user._id,
+      userEmail: user.email,
+      userName: user.name,
+      walletAddress: user.walletAddress,
+      activityType: "scan",
+      status: status === "denied" ? "failed" : "pending",
+      wasteType,
+      confidence,
+      rawLabel,
+      modelVersion,
+      imageUrl,
+      imageHash,
+      points: rewardPoints,
+      classificationId: wasteRecord._id,
+    }).catch((err) => console.error("[wasteController] Audit log failed:", err));
 
     // NOTE: Rewards are NOT granted here. The user only sees "potential"
     // points at this stage. Actual reward granting happens in POST /recycle
@@ -276,6 +296,36 @@ export const getClassification = async (
     }
 
     return res.status(200).json({ classification });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * DELETE /waste/:id
+ * Delete a classification record. Only allowed for the owner.
+ */
+export const deleteClassification = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  try {
+    const userId = req.userId;
+    const { id } = req.params;
+
+    const classification = await WasteClassification.findOne({
+      _id: id,
+      userId,
+    });
+
+    if (!classification) {
+      return res.status(404).json({ message: "Classification not found" });
+    }
+
+    await WasteClassification.deleteOne({ _id: id });
+
+    return res.status(200).json({ message: "Classification deleted successfully" });
   } catch (error) {
     return next(error);
   }

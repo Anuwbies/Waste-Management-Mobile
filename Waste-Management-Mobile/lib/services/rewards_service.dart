@@ -1,3 +1,5 @@
+import 'package:flutter/widgets.dart';
+
 import '../config/api_config.dart';
 import '../models/reward_models.dart';
 import 'api_client.dart';
@@ -103,6 +105,18 @@ class RewardsService {
       rethrow;
     } catch (e) {
       throw ApiException('Failed to redeem reward');
+    }
+  }
+
+  /// Delete a reward transaction by ID
+  Future<void> deleteTransaction(String id) async {
+    try {
+      await _api.delete('/rewards/history/$id');
+      debugPrint('[RewardsService] Transaction $id deleted');
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException('Failed to delete reward history: $e');
     }
   }
 }
