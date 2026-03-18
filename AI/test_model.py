@@ -6,15 +6,23 @@ from PIL import Image, ImageTk, ImageGrab
 import tensorflow as tf
 import numpy as np
 
+import json
+
 # -------------------------------------------------
 # Configuration
 # -------------------------------------------------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-MODEL_PATH = os.path.join(SCRIPT_DIR, "final_model.tflite")
+MODEL_PATH = os.path.join(SCRIPT_DIR, "new_best_efficientnetb2_calibrated.keras")
+CONFIG_PATH = os.path.join(SCRIPT_DIR, "waste_classifier_config.json")
+
+with open(CONFIG_PATH, "r") as f:
+    _config = json.load(f)
+
 TEST_DATASET_DIR = os.path.join(SCRIPT_DIR, "test")  # <-- labeled test dataset
 
-IMG_SIZE = (260, 260)
+IMG_SIZE = tuple(_config.get("img_size", [260, 260]))
+TEMPERATURE = float(_config.get("temperature", 1.0))
 
 preprocess_input = tf.keras.applications.efficientnet.preprocess_input
 
@@ -33,18 +41,20 @@ CLASS_NAMES = [
 VALID_EXTENSIONS = (".jpg", ".jpeg", ".png")
 
 # -------------------------------------------------
-# Load TFLite model
+# Load Keras model
 # -------------------------------------------------
-interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
-interpreter.allocate_tensors()
-
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
+model = tf.keras.models.load_model(MODEL_PATH)
 
 # -------------------------------------------------
-# Evaluate TFLite model accuracy
+# Evaluate Keras model accuracy
 # -------------------------------------------------
-def evaluate_tflite_accuracy():
+def softmax_with_temperature(logits, temperature=1.0):
+    logits = np.asarray(logits, dtype=np.float32)
+    scaled = logits / temperature
+    exp = np.exp(scaled - np.max(scaled))
+    return exp / np.sum(exp)
+
+def evaluate_model_accuracy():
     correct = 0
     total = 0
 
@@ -65,9 +75,8 @@ def evaluate_tflite_accuracy():
             img = np.expand_dims(img, axis=0)
             img = preprocess_input(img)
 
-            interpreter.set_tensor(input_details[0]["index"], img)
-            interpreter.invoke()
-            preds = interpreter.get_tensor(output_details[0]["index"])[0]
+            logits = model.predict(img, verbose=0)[0]
+            preds = softmax_with_temperature(logits, temperature=TEMPERATURE)
 
             if int(np.argmax(preds)) == label_index:
                 correct += 1
@@ -77,7 +86,7 @@ def evaluate_tflite_accuracy():
     return (correct / total) if total > 0 else 0.0
 
 
-MODEL_ACCURACY = evaluate_tflite_accuracy()
+MODEL_ACCURACY = evaluate_model_accuracy()
 
 # -------------------------------------------------
 # Load local images (optional)
@@ -96,9 +105,8 @@ def run_inference(image, source="Pasted Image"):
     img_array = np.expand_dims(img_array, axis=0)
     img_array = preprocess_input(img_array)
 
-    interpreter.set_tensor(input_details[0]["index"], img_array)
-    interpreter.invoke()
-    preds = interpreter.get_tensor(output_details[0]["index"])[0]
+    logits = model.predict(img_array, verbose=0)[0]
+    preds = softmax_with_temperature(logits, temperature=TEMPERATURE)
 
     top3_idx = np.argsort(preds)[-3:][::-1]
 
@@ -150,7 +158,7 @@ def classify_random_image():
 # Build GUI
 # -------------------------------------------------
 root = tk.Tk()
-root.title("Waste Classification (EfficientNetB2 · TFLite)")
+root.title("Waste Classification (EfficientNetB2 · Keras)")
 root.geometry("430x620")
 root.resizable(False, False)
 

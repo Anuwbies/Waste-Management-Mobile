@@ -1,54 +1,96 @@
-import time
 import os
+import time
+import tensorflow as tf
+import numpy as np
 from PIL import Image
-from inference_service import classify, _load_model, _compute_phash
 
-# Setup
-_load_model()
+import json
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(SCRIPT_DIR)
-UPLOAD_DIR = os.path.join(ROOT_DIR, "backend", "uploads")
+MODEL_PATH = os.path.join(SCRIPT_DIR, "new_best_efficientnetb2_calibrated.keras")
+CONFIG_PATH = os.path.join(SCRIPT_DIR, "waste_classifier_config.json")
 
-test_images = [
-    os.path.join(UPLOAD_DIR, "waste-1770822556506-621177501.jpg"),
-    os.path.join(UPLOAD_DIR, "waste-1771390778859-907581982.jpg"),
-    os.path.join(UPLOAD_DIR, "waste-1770819118003-436823859.png")
-]
+with open(CONFIG_PATH, "r") as f:
+    _config = json.load(f)
 
-print(f"{'Test Case':<45} | {'Result (sec)':<15} | {'Identified Bottleneck'}")
-print("-" * 85)
+IMG_SIZE = tuple(_config.get("img_size", [260, 260]))
+TEMPERATURE = float(_config.get("temperature", 1.0))
 
-last_img = None
-for img_path in test_images:
-    if not os.path.exists(img_path):
-        print(f"File not found: {img_path}")
-        continue
-    
-    img = Image.open(img_path).convert("RGB")
-    last_img = img
-    
-    start = time.time()
-    # run your function here
-    result = classify(img)
-    end = time.time()
-    
-    duration = end - start
-    
-    # Simple bottleneck identification logic
-    bottleneck = "None"
-    if duration > 0.5:
-        bottleneck = "Model inference latency"
-    elif duration > 0.2:
-        bottleneck = "Preprocessing overhead"
-    
-    print(f"{os.path.basename(img_path):<45} | {duration:<15.4f} | {bottleneck}")
+preprocess_input = tf.keras.applications.efficientnet.preprocess_input
 
-# Run classification one more time to measure "Contract function" (simulated via phash)
-if last_img:
-    start = time.time()
-    _compute_phash(last_img)
-    end = time.time()
-    duration = end - start
-    print(f"{'pHash computation':<45} | {duration:<15.4f} | {'DCT computation'}")
-else:
-    print("No images found to run pHash test.")
+# Load Keras model
+model = tf.keras.models.load_model(MODEL_PATH)
+
+def softmax_with_temperature(logits, temperature=1.0):
+    logits = np.asarray(logits, dtype=np.float32)
+    scaled = logits / temperature
+    exp = np.exp(scaled - np.max(scaled))
+    return exp / np.sum(exp)
+
+def ai_inference(image):
+    """
+    Core inference function handling the AI processing of an image.
+    Separated from GUI for performance testing.
+    """
+    if image is None:
+        raise ValueError("Empty image input")
+        
+    img_resized = image.resize(IMG_SIZE)
+    img_array = np.array(img_resized, dtype=np.float32)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array = preprocess_input(img_array)
+
+    logits = model.predict(img_array, verbose=0)[0]
+    preds = softmax_with_temperature(logits, temperature=TEMPERATURE)
+    return preds
+
+def run_and_time(fn, x):
+    """
+    Timing function specified in the Performance Testing Lab instructions.
+    """
+    t0 = time.perf_counter()
+    try:
+        y = fn(x)
+        status = "Success"
+    except Exception as e:
+        y = None
+        status = f"Error: {e}"
+    t1 = time.perf_counter()
+    return status, round(t1 - t0, 3)
+
+def run_performance_tests():
+    print("--------------------------------------------------")
+    print("      Performance Testing Lab: AI Track           ")
+    print("--------------------------------------------------\n")
+    
+    # Pre-warming the model (optional but recommended for more accurate TFLite metrics)
+    # The first inference can be slow due to initialization
+    dummy_warmup = Image.new("RGB", (100, 100), color="black")
+    try:
+        ai_inference(dummy_warmup)
+    except Exception:
+        pass
+    
+    # 1. Normal size image upload (e.g., typical 500x500 image)
+    print("Case 1: Normal input (500x500 image)")
+    normal_image = Image.new("RGB", (500, 500), color="white")
+    status, duration = run_and_time(ai_inference, normal_image)
+    print(f"Result: {status}")
+    print(f"Time Taken: {duration} seconds\n")
+
+    # 2. Big size image upload (e.g., 4000x4000 high-res camera shot)
+    print("Case 2: Long input / Big size image upload (4000x4000 image)")
+    big_image = Image.new("RGB", (4000, 4000), color="blue")
+    status, duration = run_and_time(ai_inference, big_image)
+    print(f"Result: {status}")
+    print(f"Time Taken: {duration} seconds\n")
+
+    # 3. Empty user input (e.g., user didn't upload or select anything)
+    print("Case 3: Empty input (None)")
+    empty_image = None
+    status, duration = run_and_time(ai_inference, empty_image)
+    print(f"Result: {status}")
+    print(f"Time Taken: {duration} seconds\n")
+
+if __name__ == "__main__":
+    run_performance_tests()

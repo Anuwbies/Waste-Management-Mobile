@@ -1,0 +1,23 @@
+{
+  "class_names": [
+    "E-waste",
+    "automobile wastes",
+    "battery waste",
+    "glass waste",
+    "light bulbs",
+    "metal waste",
+    "organic waste",
+    "paper waste",
+    "plastic waste"
+  ],
+  "img_size": [
+    260,
+    260
+  ],
+  "temperature": 1.0,
+  "confidence_threshold": 0.5,
+  "margin_threshold": 0.15,
+  "label_smoothing": 0.1,
+  "dropout_rate": 0.5,
+  "l2_weight": 0.0003
+}

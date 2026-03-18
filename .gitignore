@@ -37,6 +37,7 @@ pnpm-debug.log*
 
 backend/dist/
 backend/build/
+backend/uploads/
 
 ########################
 # Hardhat / Blockchain

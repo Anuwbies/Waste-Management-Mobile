@@ -1,7 +1,7 @@
 """
 Waste Classification Inference Service
 =======================================
-FastAPI microservice that loads the TFLite EfficientNetB2 model once at startup
+FastAPI microservice that loads the Keras EfficientNetB2 model once at startup
 and exposes an HTTP classification endpoint for the backend.
 
 Run:
@@ -32,9 +32,16 @@ logger = logging.getLogger("inference_service")
 
 # --- Configuration --------------------------------------------------------- #
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(SCRIPT_DIR, "final_model.tflite")
-IMG_SIZE = (260, 260)
-MODEL_VERSION = "final_model.tflite"
+MODEL_PATH = os.path.join(SCRIPT_DIR, "new_best_efficientnetb2_calibrated.keras")
+CONFIG_PATH = os.path.join(SCRIPT_DIR, "waste_classifier_config.json")
+
+# Load configuration for hyperparams like temperature
+with open(CONFIG_PATH, "r") as f:
+    _config = json.load(f)
+
+IMG_SIZE = tuple(_config.get("img_size", [260, 260]))
+TEMPERATURE = float(_config.get("temperature", 1.0))
+MODEL_VERSION = "new_best_efficientnetb2_calibrated.keras"
 
 # The 9-class label order MUST match training order exactly.
 CLASS_NAMES: List[str] = [
@@ -76,30 +83,25 @@ LABEL_TO_CANONICAL = {
     "Automobile":  "metal",
 }
 
-# --- TFLite Interpreter --------------------------------------------------- #
+# --- Keras Model --------------------------------------------------- #
 import tensorflow as tf
 
-_interpreter: tf.lite.Interpreter | None = None
-_input_details = None
-_output_details = None
+_model: tf.keras.Model | None = None
 
 
 def _load_model() -> None:
-    """Load the TFLite model into a module-level interpreter."""
-    global _interpreter, _input_details, _output_details
+    """Load the Keras model into a module-level variable."""
+    global _model
 
     if not os.path.isfile(MODEL_PATH):
-        raise FileNotFoundError(f"TFLite model not found at {MODEL_PATH}")
+        raise FileNotFoundError(f"Keras model not found at {MODEL_PATH}")
 
-    _interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
-    _interpreter.allocate_tensors()
-    _input_details = _interpreter.get_input_details()
-    _output_details = _interpreter.get_output_details()
-    logger.info("TFLite model loaded: %s", MODEL_PATH)
+    _model = tf.keras.models.load_model(MODEL_PATH)
+    logger.info("Keras model loaded: %s", MODEL_PATH)
 
 
 def _ensure_model() -> None:
-    if _interpreter is None:
+    if _model is None:
         _load_model()
 
 
@@ -115,6 +117,13 @@ def preprocess(image: Image.Image) -> np.ndarray:
     # EfficientNet V1 models in Keras/TFLite usually handle scaling internally 
     # or expect pixels in range [0, 255].
     return arr
+
+
+def softmax_with_temperature(logits, temperature=1.0):
+    logits = np.asarray(logits, dtype=np.float32)
+    scaled = logits / temperature
+    exp = np.exp(scaled - np.max(scaled))
+    return exp / np.sum(exp)
 
 
 # --- Inference ------------------------------------------------------------- #
@@ -133,9 +142,8 @@ def classify(image: Image.Image, top_k: int = 5) -> dict:
     _ensure_model()
 
     arr = preprocess(image)
-    _interpreter.set_tensor(_input_details[0]["index"], arr)
-    _interpreter.invoke()
-    preds = _interpreter.get_tensor(_output_details[0]["index"])[0]
+    logits = _model.predict(arr, verbose=0)[0]
+    preds = softmax_with_temperature(logits, temperature=TEMPERATURE)
 
     # Ensure predictions are proper probabilities
     preds = preds.astype(float)
@@ -177,7 +185,7 @@ from fastapi.responses import JSONResponse
 app = FastAPI(
     title="Waste Classification Service",
     version="1.0.0",
-    description="TFLite EfficientNetB2 inference microservice",
+    description="Keras EfficientNetB2 inference microservice",
 )
 
 
@@ -195,7 +203,7 @@ async def startup_event():
 @app.get("/health")
 async def health():
     """Health check — reports model status."""
-    model_loaded = _interpreter is not None
+    model_loaded = _model is not None
     return {
         "status": "ok" if model_loaded else "degraded",
         "modelLoaded": model_loaded,
